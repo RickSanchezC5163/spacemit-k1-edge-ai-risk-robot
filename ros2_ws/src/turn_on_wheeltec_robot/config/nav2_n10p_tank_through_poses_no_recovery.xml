@@ -1,0 +1,15 @@
+<!--
+  Guarded NavigateThroughPoses tree kept only so Humble bt_navigator can
+  configure without loading the default recovery tree. Do not use it for
+  automatic exploration on the Tank chassis.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <PipelineSequence name="NavigateThroughPosesNoRecovery">
+      <RateController hz="0.5">
+        <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+      </RateController>
+      <FollowPath path="{path}" controller_id="FollowPath"/>
+    </PipelineSequence>
+  </BehaviorTree>
+</root>

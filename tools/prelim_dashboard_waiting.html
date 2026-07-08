@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="2">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K1 风险地图等待数据</title>
+  <style>
+    body { margin: 0; font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; background: #fff; color: #111827; }
+    main { padding: 28px; }
+    h1 { margin: 0 0 16px; font-size: 28px; letter-spacing: 0; }
+    .panel { border: 2px solid #111827; border-radius: 8px; padding: 18px; max-width: 900px; background: #f9fafb; }
+    a { color: #1d4ed8; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>K1 风险地图 Dashboard</h1>
+    <div class="panel">
+      <p>正在等待 YOLO 第一帧和风险地图文件生成。本页每 2 秒自动刷新。</p>
+      <p>当前可先查看：<a href="yolo_monitor.html">YOLO 实时识别</a> / <a href="radar_monitor.html">雷达与里程计</a></p>
+      <p>如果 YOLO 已启动但长时间无结果，请重启 EP 推理窗口。</p>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>k1_risk_engine</name>
+  <version>0.1.0</version>
+  <description>Rule-based risk engine for non-arm K1 bring-up.</description>
+  <maintainer email="team@example.invalid">K1 Robot Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

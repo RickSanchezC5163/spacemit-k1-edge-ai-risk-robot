@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "action_candidate.schema.json",
+  "title": "ActionCandidate",
+  "type": "object",
+  "required": ["candidate_id", "rl_action", "execution_mode", "safety_gate_required"],
+  "properties": {
+    "candidate_id": {"type": "string"},
+    "policy_name": {"type": "string"},
+    "rl_action": {"type": "string"},
+    "confidence": {"type": "number"},
+    "observation": {"type": "object"},
+    "safety_gate_required": {"type": "boolean"},
+    "allowed_by_safety_gate": {"type": ["boolean", "null"]},
+    "execution_mode": {"enum": ["dry_run_only", "sim_only", "hardware_gated"]}
+  },
+  "additionalProperties": true
+}

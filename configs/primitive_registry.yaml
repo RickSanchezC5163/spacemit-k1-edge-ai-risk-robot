@@ -1,0 +1,183 @@
+schema_version: primitive_registry_v1
+claim_boundary:
+  - "This registry defines high-level primitives only."
+  - "RL/Gazebo/real-vehicle adapters must use these names instead of low-level cmd_vel or servo pulses."
+  - "Real chassis execution must route through /input_cmd_vel -> scan_safety_guard_node -> /cmd_vel_guarded."
+  - "Real arm execution requires base_zero and an explicit hardware gate."
+categories:
+  chassis:
+    - HOLD
+    - FORWARD_0P15
+    - ARC_FAST_LEFT
+    - ARC_FAST_RIGHT
+    - SAVE_MAP
+    - STOP_SAFE
+  d435:
+    - HOLD_CAPTURE
+    - D435_CAPTURE
+  risk_vision:
+    - RISK_DETECT_HSV_RED_RULE
+    - RISK_DETECT_LOCAL_MODEL
+    - RISK_CLASSIFY_PRINTED_RISK
+  risk_map:
+    - RISK_POINT_FROM_BBOX_DEPTH
+    - RISK_PROJECT_TO_MAP
+    - RISK_MAP_SUMMARY
+    - RISK_VISUALIZE_MAP
+  arm:
+    - ARM_HOME_6B
+    - ARM_NO_LOAD_RESPONSE
+    - ARM_CLEAR_CANDIDATE_DRYRUN
+    - ARM_CLEAR_NO_LOAD_TRAJECTORY
+    - ARM_SOFT_CONTACT_TEST
+    - ARM_CONTROLLED_CLEAR
+  report:
+    - REPORT_DETERMINISTIC
+    - REPORT_LOCAL_LLM
+    - REPORT_EXPORT_BUNDLE
+primitives:
+  HOLD:
+    category: chassis
+    executable_on_real: true
+    requires_base_zero: false
+    publishes_cmd_vel: false
+    direct_cmd_vel_guarded_allowed: false
+  FORWARD_0P15:
+    category: chassis
+    executable_on_real: true
+    requires_base_zero: false
+    publishes_cmd_vel: true
+    publish_topic: /input_cmd_vel
+    direct_cmd_vel_guarded_allowed: false
+    chassis_serial_allowed: false
+  ARC_FAST_LEFT:
+    category: chassis
+    executable_on_real: true
+    requires_base_zero: false
+    publishes_cmd_vel: true
+    publish_topic: /input_cmd_vel
+    direct_cmd_vel_guarded_allowed: false
+    chassis_serial_allowed: false
+  ARC_FAST_RIGHT:
+    category: chassis
+    executable_on_real: true
+    requires_base_zero: false
+    publishes_cmd_vel: true
+    publish_topic: /input_cmd_vel
+    direct_cmd_vel_guarded_allowed: false
+    chassis_serial_allowed: false
+  SAVE_MAP:
+    category: chassis
+    executable_on_real: true
+    requires_base_zero: true
+    publishes_cmd_vel: false
+  STOP_SAFE:
+    category: chassis
+    executable_on_real: true
+    requires_base_zero: false
+    publishes_cmd_vel: true
+    publish_topic: /input_cmd_vel
+    direct_cmd_vel_guarded_allowed: false
+  HOLD_CAPTURE:
+    category: d435
+    executable_on_real: true
+    requires_base_zero: true
+    publishes_cmd_vel: false
+    output_evidence: [rgb, depth_raw, depth_vis, camera_info, odom, capture_meta]
+  D435_CAPTURE:
+    category: d435
+    executable_on_real: true
+    requires_base_zero: true
+    publishes_cmd_vel: false
+    output_evidence: [rgb, depth_raw, depth_vis, camera_info, odom, capture_meta]
+  RISK_DETECT_HSV_RED_RULE:
+    category: risk_vision
+    executable_on_real: true
+    model_used: false
+    baseline_only: true
+    online_api_used: false
+  RISK_DETECT_LOCAL_MODEL:
+    category: risk_vision
+    executable_on_real: true
+    model_used: true
+    local_inference_required: true
+    online_api_used: false
+  RISK_CLASSIFY_PRINTED_RISK:
+    category: risk_vision
+    executable_on_real: true
+    model_used: true
+    local_inference_required: true
+    online_api_used: false
+  RISK_POINT_FROM_BBOX_DEPTH:
+    category: risk_map
+    executable_on_real: true
+    requires_depth: true
+    publishes_cmd_vel: false
+  RISK_PROJECT_TO_MAP:
+    category: risk_map
+    executable_on_real: true
+    tf_validated_required_for_precision_claim: true
+    publishes_cmd_vel: false
+  RISK_MAP_SUMMARY:
+    category: risk_map
+    executable_on_real: true
+    publishes_cmd_vel: false
+  RISK_VISUALIZE_MAP:
+    category: risk_map
+    executable_on_real: true
+    publishes_cmd_vel: false
+  ARM_HOME_6B:
+    category: arm
+    executable_on_real: true
+    requires_base_zero: true
+    published_cmd_vel_during_arm: false
+    final_pose_expected: 6b
+  ARM_NO_LOAD_RESPONSE:
+    category: arm
+    executable_on_real: true
+    requires_base_zero: true
+    contact_allowed: false
+    obstacle_removal_allowed: false
+    final_pose_expected: 6b
+  ARM_CLEAR_CANDIDATE_DRYRUN:
+    category: arm
+    executable_on_real: false
+    requires_base_zero: true
+    hardware_executed: false
+    contact_allowed: false
+    obstacle_removal_allowed: false
+  ARM_CLEAR_NO_LOAD_TRAJECTORY:
+    category: arm
+    executable_on_real: false
+    requires_base_zero: true
+    contact_allowed: false
+    obstacle_removal_allowed: false
+    final_pose_expected: 6b
+  ARM_SOFT_CONTACT_TEST:
+    category: arm
+    executable_on_real: false
+    requires_base_zero: true
+    contact_allowed: true
+    obstacle_removal_allowed: false
+    hardware_gate_required: true
+  ARM_CONTROLLED_CLEAR:
+    category: arm
+    executable_on_real: false
+    requires_base_zero: true
+    contact_allowed: true
+    obstacle_removal_allowed: true
+    hardware_gate_required: true
+  REPORT_DETERMINISTIC:
+    category: report
+    executable_on_real: true
+    local_llm_used: false
+    online_api_used: false
+  REPORT_LOCAL_LLM:
+    category: report
+    executable_on_real: true
+    local_llm_used: true
+    online_api_used: false
+  REPORT_EXPORT_BUNDLE:
+    category: report
+    executable_on_real: true
+    online_api_used: false

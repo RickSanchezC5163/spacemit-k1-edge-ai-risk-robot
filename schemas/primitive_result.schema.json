@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "primitive_result.schema.json",
+  "title": "PrimitiveResult",
+  "type": "object",
+  "required": ["action_id", "primitive", "status", "hardware_executed"],
+  "properties": {
+    "action_id": {"type": "string"},
+    "primitive": {"type": "string"},
+    "status": {"type": "string"},
+    "started_at": {"type": "string"},
+    "ended_at": {"type": "string"},
+    "hardware_executed": {"type": "boolean"},
+    "published_cmd_vel": {"type": "boolean"},
+    "serial_port_opened": {"type": "boolean"},
+    "serial_bytes_written": {"type": "integer"},
+    "base_zero_ok_before": {"type": ["boolean", "null"]},
+    "error": {"type": ["string", "null"]},
+    "details": {"type": "object"}
+  },
+  "additionalProperties": true
+}

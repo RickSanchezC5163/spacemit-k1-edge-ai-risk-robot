@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K1 YOLO 风险识别</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+      background: #f6f7f9;
+      color: #111827;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 20px;
+      background: #fff;
+      border-bottom: 1px solid #d9dde5;
+    }
+    h1 { margin: 0; font-size: 26px; letter-spacing: 0; }
+    main { display: grid; grid-template-columns: minmax(360px, 1.15fr) minmax(360px, .85fr); gap: 14px; padding: 14px; }
+    .panel, .metric {
+      background: #fff;
+      border: 1px solid #d9dde5;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 10px; }
+    .label { color: #4b5563; font-size: 13px; margin-bottom: 4px; }
+    .value { font-size: 24px; font-weight: 800; color: #111827; }
+    .status { font-weight: 800; font-size: 16px; }
+    .ok { color: #047857; }
+    .bad { color: #b91c1c; }
+    .overlay {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: contain;
+      border: 2px solid #111827;
+      background: #111827;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 9px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 16px; }
+    th { background: #f9fafb; color: #374151; font-size: 13px; }
+    .reason { font-family: Consolas, monospace; font-size: 14px; }
+    a { color: #1d4ed8; }
+    @media (max-width: 1000px) {
+      main { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>K1 YOLOv8n 本地风险识别</h1>
+    <div id="status" class="status">连接中...</div>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="label">D435 实时推理叠框</div>
+      <img id="overlay" class="overlay" src="latest_overlay.png" alt="latest YOLO overlay">
+    </section>
+    <section style="display:grid;gap:14px">
+      <div class="metrics">
+        <div class="metric"><div class="label">infer_fps</div><div id="fps" class="value">--</div></div>
+        <div class="metric"><div class="label">latency</div><div id="latency" class="value">--</div></div>
+        <div class="metric"><div class="label">当前检测</div><div id="currentCount" class="value">--</div></div>
+        <div class="metric"><div class="label">正式风险</div><div id="eventCount" class="value">--</div></div>
+      </div>
+      <div class="panel">
+        <div class="label">报警状态</div>
+        <div id="alarmText" class="value">--</div>
+        <div id="updated" class="label" style="margin-top:8px">--</div>
+      </div>
+      <div class="panel">
+        <table>
+          <thead>
+            <tr>
+              <th>类别</th>
+              <th>置信度</th>
+              <th>深度 m</th>
+              <th>落图/报警</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody id="rows"><tr><td colspan="5">等待数据...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <a href="dashboard.html" target="_blank">打开完整风险地图 Dashboard</a>
+      </div>
+    </section>
+  </main>
+<script>
+function num(x, digits) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n.toFixed(digits) : "--";
+}
+function gateReason(gate) {
+  if (!gate) return "--";
+  if (gate.allowed) return "passed";
+  return gate.reason || "rejected";
+}
+async function refresh() {
+  try {
+    const response = await fetch("alarm_state.json?ts=" + Date.now(), {cache: "no-store"});
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const data = await response.json();
+    const fps = data.infer_fps || (data.latency_ms ? 1000 / Number(data.latency_ms) : null);
+    document.getElementById("fps").textContent = num(fps, 2);
+    document.getElementById("latency").textContent = data.latency_ms ? num(data.latency_ms, 0) + " ms" : "--";
+    document.getElementById("currentCount").textContent = data.current_detection_count ?? 0;
+    document.getElementById("eventCount").textContent = data.event_count ?? 0;
+    document.getElementById("alarmText").textContent = data.alarm_active ? "报警中" : "未报警";
+    document.getElementById("alarmText").className = "value " + (data.alarm_active ? "bad" : "ok");
+    document.getElementById("updated").textContent = data.updated_at || "--";
+    document.getElementById("status").textContent = "已连接";
+    document.getElementById("status").className = "status ok";
+    document.getElementById("overlay").src = "latest_overlay.png?ts=" + Date.now();
+    const detections = data.current_detections || [];
+    const rows = document.getElementById("rows");
+    if (!detections.length) {
+      rows.innerHTML = "<tr><td colspan=\"5\">当前帧无检测</td></tr>";
+      return;
+    }
+    rows.innerHTML = detections.map((det) => {
+      const gate = det.auto_risk_gate || {};
+      const allowed = !!gate.allowed;
+      return `<tr>
+        <td><strong>${det.class_name || "--"}</strong></td>
+        <td>${num(det.confidence, 3)}</td>
+        <td>${num(det.distance_m, 3)}</td>
+        <td class="${allowed ? "ok" : "bad"}">${allowed ? "通过" : "过滤"}</td>
+        <td class="reason">${gateReason(gate)}</td>
+      </tr>`;
+    }).join("");
+  } catch (err) {
+    document.getElementById("status").textContent = "连接失败: " + err.message;
+    document.getElementById("status").className = "status bad";
+  }
+}
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

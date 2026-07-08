@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "risk_point.schema.json",
+  "title": "RiskPoint",
+  "type": "object",
+  "required": ["risk_id", "class_name", "projection_status"],
+  "properties": {
+    "risk_id": {"type": "string"},
+    "class_name": {"type": "string"},
+    "confidence": {"type": "number"},
+    "image_bbox_xywh": {"type": "array", "items": {"type": "number"}},
+    "depth_median_m": {"type": ["number", "null"]},
+    "camera_point_xyz_m": {"type": ["object", "null"]},
+    "base_point_xyz_m": {"type": ["object", "null"]},
+    "odom_point_xy": {"type": ["array", "null"], "items": {"type": "number"}},
+    "map_pixel_xy": {"type": ["array", "null"], "items": {"type": "integer"}},
+    "projection_status": {"type": "string"},
+    "evidence_image_path": {"type": ["string", "null"]},
+    "overlay_path": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

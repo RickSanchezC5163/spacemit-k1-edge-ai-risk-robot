@@ -1,0 +1,39 @@
+﻿{
+    "model_name":  "yolov8n",
+    "source":  "datasets/risk_print_yolo_v1/runs/detect/risk_print_yolov8n_e50/weights/best.pt",
+    "onnx_path":  "models/risk_vision/yolov8n.onnx",
+    "int8_onnx_path":  "models/risk_vision/yolov8n_int8.onnx",
+    "classes":  [
+                    "crack",
+                    "corrosion",
+                    "leakage",
+                    "blockage"
+                ],
+    "input_size":  [
+                       640,
+                       640
+                   ],
+    "mAP50":  0.949,
+    "mAP50_95":  0.673,
+    "per_class_mAP50":  {
+                            "crack":  0.995,
+                            "corrosion":  0.995,
+                            "leakage":  0.995,
+                            "blockage":  0.812
+                        },
+    "training_images":  242,
+    "params":  3006628,
+    "gflops":  8.1,
+    "fp32_model_size_mb":  11.699,
+    "int8_model_size_mb":  3.201,
+    "opset_version":  12,
+    "exported_at":  "2026-07-02T18:35:28",
+    "k1_deployment_target":  "onnxruntime_cpu_arm",
+    "expected_k1_inference_ms":  "50-200",
+    "claim_boundary":  [
+                           "Trained on 242 D435-captured A4 printed risk images.",
+                           "Do not claim real-world defect detection accuracy.",
+                           "K1 inference latency must be measured on actual K1 ARM CPU.",
+                           "INT8 ONNX is dynamic quantization candidate; speedup must be measured on K1 before claims."
+                       ]
+}

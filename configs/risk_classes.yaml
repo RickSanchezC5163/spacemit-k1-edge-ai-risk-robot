@@ -1,0 +1,19 @@
+classes:
+  - name: soft_obstacle
+    risk_default: medium
+    description: 软性障碍，如布条、泡沫、塑料袋、小纸箱
+  - name: hard_obstacle
+    risk_default: high
+    description: 硬质障碍，如大纸箱、金属架、硬块
+  - name: blocked_path
+    risk_default: high
+    description: 通道严重受阻
+  - name: low_light
+    risk_default: medium
+    description: 低照度，需要补光复核
+  - name: cable_or_wire
+    risk_default: high
+    description: 线缆或绳索，可能缠绕履带
+  - name: reflective_noise
+    risk_default: medium
+    description: 反光或眩光干扰

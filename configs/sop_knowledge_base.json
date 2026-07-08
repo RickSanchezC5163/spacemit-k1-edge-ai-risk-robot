@@ -1,0 +1,50 @@
+[
+  {
+    "event_type": "soft_obstacle",
+    "risk_level": "medium",
+    "condition": "distance_m < 1.0",
+    "recommended_action": "stop_and_recheck",
+    "explanation": "前方出现可变形或可轻微移动障碍，继续前进可能影响履带姿态或遮挡传感器。",
+    "safety_note": "先停止并复核，不自动执行机械臂动作。"
+  },
+  {
+    "event_type": "hard_obstacle",
+    "risk_level": "high",
+    "condition": "distance_m < 0.8",
+    "recommended_action": "stop_and_report",
+    "explanation": "前方存在硬质障碍，碰撞风险高。",
+    "safety_note": "立即停止并记录事件，等待人工确认。"
+  },
+  {
+    "event_type": "blocked_path",
+    "risk_level": "high",
+    "condition": "path is not passable",
+    "recommended_action": "stop_and_report",
+    "explanation": "通道被阻断，当前路径不适合继续通行。",
+    "safety_note": "不要自动绕行到未知区域。"
+  },
+  {
+    "event_type": "low_light",
+    "risk_level": "medium",
+    "condition": "image brightness too low or detection confidence drops",
+    "recommended_action": "turn_on_light_and_recheck",
+    "explanation": "环境照度不足，视觉检测可信度下降。",
+    "safety_note": "补光前确认灯光功率和温升，默认不使用满功率。"
+  },
+  {
+    "event_type": "cable_or_wire",
+    "risk_level": "high",
+    "condition": "distance_m < 1.2",
+    "recommended_action": "stop_and_report",
+    "explanation": "线缆或绳索可能缠绕履带或机械结构。",
+    "safety_note": "不尝试碾压通过，不自动执行机械臂动作。"
+  },
+  {
+    "event_type": "reflective_noise",
+    "risk_level": "medium",
+    "condition": "reflective region affects lidar or camera confidence",
+    "recommended_action": "slow_down_and_recheck",
+    "explanation": "反光或眩光可能导致深度、雷达或视觉识别不稳定。",
+    "safety_note": "降低速度并复核传感器输出，当前阶段只输出建议。"
+  }
+]

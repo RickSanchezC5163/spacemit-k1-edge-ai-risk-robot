@@ -1,0 +1,16 @@
+{
+  "dataset_purpose": "printed risk image simulation",
+  "classes": [
+    "crack",
+    "corrosion",
+    "obstacle",
+    "warning_marker",
+    "normal"
+  ],
+  "source_notes": [],
+  "print_usage": "A4 printed images pasted in simulated constrained-space environment",
+  "claim_boundary": [
+    "Printed risk images simulate visual risk sources",
+    "Do not claim real-world defect detection accuracy without independent validation"
+  ]
+}

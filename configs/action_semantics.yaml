@@ -1,0 +1,81 @@
+schema_version: action_semantics_v1
+source_baseline: docs/step7e2_fastdemo_reproduction_20260630.md
+real_vehicle_boundary:
+  chassis_command_path: "/input_cmd_vel -> scan_safety_guard_node -> /cmd_vel_guarded"
+  no_direct_cmd_vel_guarded: true
+  no_chassis_serial_write_from_rl: true
+  no_servo_pulse_from_rl: true
+  arm_requires_base_zero: true
+actions:
+  HOLD:
+    purpose: Keep current state and observe.
+    rl_enabled: true
+    sim_enabled: true
+    real_enabled: true
+    safety_gate_required: false
+  FORWARD_0P15:
+    purpose: Short guarded forward step.
+    rl_enabled: true
+    sim_enabled: true
+    real_enabled: true
+    safety_gate_required: true
+    real_execution: publish /input_cmd_vel only through existing P4 runner
+  ARC_FAST_LEFT:
+    purpose: Warning-band guarded left arc.
+    rl_enabled: true
+    sim_enabled: true
+    real_enabled: true
+    safety_gate_required: true
+    real_execution: publish /input_cmd_vel only through existing P4 runner
+  ARC_FAST_RIGHT:
+    purpose: Warning-band guarded right arc.
+    rl_enabled: true
+    sim_enabled: true
+    real_enabled: true
+    safety_gate_required: true
+    real_execution: publish /input_cmd_vel only through existing P4 runner
+  SAVE_MAP:
+    purpose: Save current map after safe stop.
+    rl_enabled: false
+    sim_enabled: true
+    real_enabled: true
+    requires_base_zero: true
+  STOP_SAFE:
+    purpose: Stop and settle until base_zero.
+    rl_enabled: true
+    sim_enabled: true
+    real_enabled: true
+    safety_gate_required: true
+  HOLD_CAPTURE:
+    purpose: Stationary D435 evidence capture.
+    rl_enabled: true
+    sim_enabled: true
+    real_enabled: true
+    requires_base_zero: true
+    publishes_cmd_vel: false
+  ARM_NO_LOAD_RESPONSE:
+    purpose: Validated no-load response sequence.
+    rl_enabled: true
+    sim_enabled: true
+    real_enabled: true
+    requires_base_zero: true
+    contact_allowed: false
+    obstacle_removal_allowed: false
+  ARM_CLEAR_CANDIDATE_DRYRUN:
+    purpose: Candidate for future clearance, no hardware.
+    rl_enabled: false
+    sim_enabled: true
+    real_enabled: false
+    hardware_executed: false
+  RISK_DETECT_LOCAL_MODEL:
+    purpose: Future local AI risk detection backend.
+    rl_enabled: false
+    sim_enabled: true
+    real_enabled: false
+    online_api_used: false
+  REPORT_LOCAL_LLM:
+    purpose: Future local LLM risk report backend.
+    rl_enabled: false
+    sim_enabled: true
+    real_enabled: true
+    online_api_used: false

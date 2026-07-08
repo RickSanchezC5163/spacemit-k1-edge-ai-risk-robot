@@ -1,0 +1,83 @@
+{
+  "_protocol_version": "arm_safety_v1",
+  "_description": "Arm-B no-load sample candidate v0. Hand-written poses transcribed from manual calibration notes. NOT validated against safety config. NOT executed on hardware.",
+
+  "sequence_name": "arm_b_no_load_sample_v0_candidate",
+  "validated": false,
+  "hardware_executed": false,
+  "contact_allowed": false,
+  "obstacle_removal_allowed": false,
+  "requires_base_zero": true,
+  "publishes_cmd_vel": false,
+  "source": "manual_calibration_notes_20260630",
+
+  "steps": [
+    {
+      "step_name": "1_initial_flat_pose",
+      "duration_ms": 1500,
+      "servo_targets": { "1": 499, "2": 770, "3": 457, "4": 500, "5": 494 },
+      "notes": "Arm flat / level starting pose. ID2 high (770), ID3 mid (457)."
+    },
+    {
+      "step_name": "2_arm_raised",
+      "duration_ms": 1500,
+      "servo_targets": { "1": 498, "2": 600, "3": 540, "4": 473, "5": 498 },
+      "notes": "Arm raised / bow pose. ID2 drops to 600, ID3 rises to 540."
+    },
+    {
+      "step_name": "3a_pre_grasp_approach",
+      "duration_ms": 1500,
+      "servo_targets": { "1": 504, "2": 400, "3": 590, "4": 471, "5": 496 },
+      "notes": "Shoulder forward (400), elbow extends (590). Pre-grasp approach."
+    },
+    {
+      "step_name": "3b_full_reach",
+      "duration_ms": 2000,
+      "servo_targets": { "1": 510, "2": 250, "3": 646, "4": 470, "5": 494 },
+      "notes": "Full reach forward. ID2 at 250 (near limit?), ID3 at 646. WARNING: ID2=250 may be near lower limit."
+    },
+    {
+      "step_name": "4_grasp_pose",
+      "duration_ms": 1500,
+      "servo_targets": { "1": 514, "2": 291, "3": 644, "4": 471, "5": 495 },
+      "notes": "Grasp pose. ID2 at 291, ID3 at 644. Gripper still at default (495)."
+    },
+    {
+      "step_name": "5_gripper_open_for_release",
+      "duration_ms": 1500,
+      "servo_targets": { "1": 512, "2": 290, "3": 642, "4": 473, "5": 220 },
+      "notes": "Gripper opens to 220 (wider than home 497). WARNING: ID2=290 near lower limit."
+    },
+    {
+      "step_name": "6a_return_mid_pose",
+      "duration_ms": 1500,
+      "servo_targets": { "1": 511, "2": 500, "3": 540, "4": 488, "5": 360 },
+      "notes": "Return to mid pose. ID2 back to 500, ID3 to 540, gripper partially closed (360)."
+    },
+    {
+      "step_name": "6b_safe_idle_home",
+      "duration_ms": 2000,
+      "servo_targets": { "1": 510, "2": 771, "3": 426, "4": 503, "5": 497 },
+      "notes": "Safe idle home pose. Same as config poses.safe_idle_home_like_6b. ID2 high (771), ID3 low (426). Arm stowed upright."
+    }
+  ],
+
+  "warnings": [
+    "Step 3b: ID2=250 appears near lower mechanical limit. Verify safe range before execution.",
+    "Step 5: ID2=290 also near lower limit. Gripper at 220 (open) needs confirmation of open/close direction.",
+    "Step 6b: ID2=771 is well above default center 500. Verify this is a safe stowed position, not a mechanical limit.",
+    "All values are from manual notes. Pulse-to-angle mapping and direction NOT confirmed.",
+    "No current/temperature/stall monitoring data available for these poses."
+  ],
+
+  "pending_calibration": [
+    "Confirm servo_id to joint mapping: 1=yaw, 2=shoulder, 3=elbow, 4=wrist, 5=gripper",
+    "Confirm pulse increase direction for each joint",
+    "Record observed_lower_near_limit and observed_upper_near_limit per joint",
+    "Determine recommended soft limits with safety margins",
+    "Test each step individually before running full sequence",
+    "Verify base_zero_ok remains true during arm motion"
+  ],
+
+  "_claim_boundary": "This is a PLAN-ONLY candidate. No hardware was accessed. No serial frames were sent. No servos were moved. All values are transcribed from manual notes and require calibration verification before any hardware execution."
+}

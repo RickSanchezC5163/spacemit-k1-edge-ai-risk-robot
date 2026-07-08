@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K1 雷达 / 里程计 / 风险点</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; background: #f6f7f9; color: #111827; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: #fff; border-bottom: 1px solid #d9dde5; }
+    h1 { margin: 0; font-size: 25px; letter-spacing: 0; }
+    main { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr); gap: 14px; padding: 14px; }
+    .panel, .metric { background: #fff; border: 1px solid #d9dde5; border-radius: 8px; padding: 12px; }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 10px; }
+    .label { color: #4b5563; font-size: 13px; margin-bottom: 4px; }
+    .value { font-size: 24px; font-weight: 800; }
+    .ok { color: #047857; font-weight: 800; }
+    .bad { color: #b91c1c; font-weight: 800; }
+    canvas { width: 100%; aspect-ratio: 1 / 1; border: 2px solid #111827; background: #ffffff; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 15px; }
+    th { background: #f9fafb; color: #374151; font-size: 13px; }
+    img { width: 100%; border: 2px solid #111827; background: #fff; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } .metrics { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>K1 雷达扫描 / 里程计 / 风险点</h1>
+    <div id="status" class="bad">等待数据</div>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="label">/scan 极坐标示意</div>
+      <canvas id="scan" width="620" height="620"></canvas>
+    </section>
+    <section style="display:grid; gap:14px">
+      <div class="metrics">
+        <div class="metric"><div class="label">前方最近距离</div><div id="frontMin" class="value">--</div></div>
+        <div class="metric"><div class="label">全局最近距离</div><div id="scanMin" class="value">--</div></div>
+        <div class="metric"><div class="label">风险点数量</div><div id="riskCount" class="value">--</div></div>
+      </div>
+      <div class="panel">
+        <table>
+          <tr><th>odom x</th><td id="odomX">--</td></tr>
+          <tr><th>odom y</th><td id="odomY">--</td></tr>
+          <tr><th>yaw</th><td id="odomYaw">--</td></tr>
+          <tr><th>linear x</th><td id="linX">--</td></tr>
+          <tr><th>angular z</th><td id="angZ">--</td></tr>
+          <tr><th>scan fresh</th><td id="scanFresh">--</td></tr>
+          <tr><th>odom fresh</th><td id="odomFresh">--</td></tr>
+        </table>
+      </div>
+      <div class="panel">
+        <div class="label">风险地图快照</div>
+        <img id="riskMap" src="risk_map_snapshot.png" alt="risk map snapshot">
+      </div>
+    </section>
+  </main>
+<script>
+function fmt(v, digits, suffix) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(digits) + (suffix || "") : "--";
+}
+function text(id, value) { document.getElementById(id).textContent = value; }
+function freshText(v) { return v ? "fresh" : "stale"; }
+function drawScan(scan) {
+  const canvas = document.getElementById("scan");
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "#d1d5db";
+  ctx.lineWidth = 1;
+  for (let r = 0.2; r <= 1.2; r += 0.2) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r / 1.2 * (w * 0.45), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#111827";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - w * 0.44);
+  ctx.stroke();
+  const sample = scan.sample || [];
+  ctx.fillStyle = "#2563eb";
+  for (const p of sample) {
+    const a = Number(p.angle_rad);
+    const r = Math.min(Number(p.range_m), 1.2) / 1.2 * (w * 0.45);
+    const x = cx + Math.sin(a) * r;
+    const y = cy - Math.cos(a) * r;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#dc2626";
+  ctx.beginPath();
+  ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+  ctx.fill();
+}
+async function fetchJson(path) {
+  const response = await fetch(path + "?ts=" + Date.now(), {cache: "no-store"});
+  if (!response.ok) throw new Error(path + " HTTP " + response.status);
+  return await response.json();
+}
+async function refresh() {
+  try {
+    const telemetry = await fetchJson("topic_status.json");
+    const scan = telemetry.scan || {};
+    const odom = telemetry.odom || {};
+    text("frontMin", fmt(scan.front_min_range_m, 2, " m"));
+    text("scanMin", fmt(scan.min_range_m, 2, " m"));
+    text("odomX", fmt(odom.x_m, 3, " m"));
+    text("odomY", fmt(odom.y_m, 3, " m"));
+    text("odomYaw", fmt(odom.yaw_deg, 1, " deg"));
+    text("linX", fmt(odom.linear_x_mps, 3, " m/s"));
+    text("angZ", fmt(odom.angular_z_radps, 3, " rad/s"));
+    text("scanFresh", freshText(scan.fresh));
+    text("odomFresh", freshText(odom.fresh));
+    drawScan(scan);
+    try {
+      const points = await fetchJson("risk_map_points.json");
+      text("riskCount", (points.summary && points.summary.risk_map_points) || 0);
+    } catch (_) {
+      try {
+        const alarm = await fetchJson("alarm_state.json");
+        text("riskCount", alarm.event_count || 0);
+      } catch (__) {
+        text("riskCount", "0");
+      }
+    }
+    document.getElementById("riskMap").src = "risk_map_snapshot.png?ts=" + Date.now();
+    const ok = scan.fresh && odom.fresh;
+    const status = document.getElementById("status");
+    status.textContent = ok ? "数据正常" : "等待 ROS 数据";
+    status.className = ok ? "ok" : "bad";
+  } catch (err) {
+    const status = document.getElementById("status");
+    status.textContent = "等待 topic_status.json";
+    status.className = "bad";
+  }
+}
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

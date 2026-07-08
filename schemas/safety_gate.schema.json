@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "safety_gate.schema.json",
+  "title": "SafetyGateResult",
+  "type": "object",
+  "required": ["gate_id", "allowed", "no_direct_cmd_vel", "no_direct_servo_pulse"],
+  "properties": {
+    "gate_id": {"type": "string"},
+    "allowed": {"type": "boolean"},
+    "reason": {"type": "string"},
+    "base_zero_required": {"type": "boolean"},
+    "base_zero_ok": {"type": ["boolean", "null"]},
+    "no_direct_cmd_vel": {"type": "boolean"},
+    "no_direct_servo_pulse": {"type": "boolean"},
+    "hardware_executed": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}

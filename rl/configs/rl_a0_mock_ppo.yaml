@@ -1,0 +1,30 @@
+seed: 7
+episodes: 60
+steps_per_episode: 40
+checkpoint_every: 20
+learning_rate: 0.03
+gamma: 0.97
+clip_epsilon: 0.2
+entropy_bonus: 0.01
+target_x: 1.0
+start_x: 0.0
+action_space:
+  - hold
+  - forward_0p15
+  - arc_fast_left
+  - arc_fast_right
+mock_safety:
+  command_path: "/input_cmd_vel -> scan_safety_guard_node -> /cmd_vel_guarded"
+  front_stop_m: 0.30
+  front_warning_m: 0.80
+  reference_front_p10_window_m: [0.60, 0.80]
+  cmd_vel_published: false
+  ros_started: false
+  hardware_connected: false
+  arm_controlled: false
+step7e2_reference:
+  reproduction_doc: "docs/step7e2_fastdemo_reproduction_20260630.md"
+  preferred_evidence: "outputs/step7e2_guarded_motion_red_rule_flow_v1/e2_guarded_red_rule_arm_hw_fastdemo_010/"
+  reference_behavior: "two ARC_FAST_RIGHT steps followed by HOLD_MAX_FAST_ARC safety stop"
+  stop_reason: "max_consecutive_fast_arc_reached"
+  claim_boundary: "RL-A0 may imitate/log policy-like actions in mock training only; it must not control K1 hardware."

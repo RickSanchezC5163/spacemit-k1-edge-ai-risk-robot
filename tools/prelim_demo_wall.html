@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K1 Demo Wall</title>
+  <style>
+    body { margin: 0; font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; background: #f5f7fb; color: #111827; }
+    header { padding: 10px 14px; background: #fff; border-bottom: 1px solid #d1d5db; display: flex; justify-content: space-between; align-items: center; }
+    h1 { margin: 0; font-size: 21px; letter-spacing: 0; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; }
+    .panel { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; min-height: 0; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+    .metric { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; }
+    .label { color: #4b5563; font-size: 12px; }
+    .value { color: #111827; font-size: 20px; font-weight: 800; }
+    canvas, img { width: 100%; aspect-ratio: 4 / 3; border: 2px solid #111827; background: #fff; object-fit: contain; }
+    table { width: 100%; border-collapse: collapse; }
+    td { border-bottom: 1px solid #e5e7eb; padding: 5px; font-size: 14px; }
+    .ok { color: #047857; font-weight: 800; }
+    .bad { color: #b91c1c; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>K1 遥控建图 + 雷达/里程计 + YOLO 风险识别</h1>
+    <div id="status" class="bad">等待数据</div>
+  </header>
+  <div class="metrics">
+    <div class="metric"><div class="label">front_min</div><div id="frontMin" class="value">--</div></div>
+    <div class="metric"><div class="label">odom</div><div id="odom" class="value">--</div></div>
+    <div class="metric"><div class="label">infer_fps</div><div id="fps" class="value">--</div></div>
+    <div class="metric"><div class="label">risk_events</div><div id="events" class="value">--</div></div>
+  </div>
+  <main>
+    <section class="panel">
+      <div class="label">/scan 雷达扫描</div>
+      <canvas id="scan" width="520" height="390"></canvas>
+    </section>
+    <section class="panel">
+      <div class="label">D435 + YOLO overlay</div>
+      <img id="overlay" src="latest_overlay.png" alt="YOLO overlay">
+    </section>
+    <section class="panel">
+      <div class="label">当前 YOLO 检测</div>
+      <table id="detections"><tr><td>等待 alarm_state.json</td></tr></table>
+    </section>
+    <section class="panel">
+      <div class="label">风险地图快照</div>
+      <img id="riskMap" src="risk_map_snapshot.png" alt="risk map">
+    </section>
+  </main>
+<script>
+function n(v, digits, suffix) {
+  const x = Number(v);
+  return Number.isFinite(x) ? x.toFixed(digits) + (suffix || "") : "--";
+}
+async function json(path) {
+  const r = await fetch(path + "?ts=" + Date.now(), {cache: "no-store"});
+  if (!r.ok) throw new Error(path);
+  return await r.json();
+}
+function drawScan(scan) {
+  const c = document.getElementById("scan");
+  const ctx = c.getContext("2d");
+  const w = c.width, h = c.height, cx = w / 2, cy = h * 0.62;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "#d1d5db";
+  for (let i = 1; i <= 5; i++) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, i * 36, Math.PI, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#2563eb";
+  for (const p of scan.sample || []) {
+    const a = Number(p.angle_rad);
+    const r = Math.min(Number(p.range_m), 1.2) / 1.2 * 180;
+    const x = cx + Math.sin(a) * r;
+    const y = cy - Math.cos(a) * r;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#dc2626";
+  ctx.beginPath();
+  ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+  ctx.fill();
+}
+async function refresh() {
+  let ok = false;
+  try {
+    const t = await json("topic_status.json");
+    const scan = t.scan || {};
+    const odom = t.odom || {};
+    document.getElementById("frontMin").textContent = n(scan.front_min_range_m, 2, "m");
+    document.getElementById("odom").textContent = n(odom.x_m, 2, "") + "," + n(odom.y_m, 2, "");
+    drawScan(scan);
+    ok = !!scan.fresh && !!odom.fresh;
+  } catch (_) {}
+  try {
+    const a = await json("alarm_state.json");
+    const fps = a.infer_fps || (a.latency_ms ? 1000 / Number(a.latency_ms) : null);
+    document.getElementById("fps").textContent = n(fps, 2, "");
+    document.getElementById("events").textContent = a.event_count || 0;
+    const rows = (a.current_detections || []).map(d => {
+      const gate = d.auto_risk_gate || {};
+      return `<tr><td>${d.class_name}</td><td>${n(d.confidence, 3, "")}</td><td>${n(d.distance_m, 2, "m")}</td><td class="${gate.allowed ? "ok" : "bad"}">${gate.allowed ? "通过" : (gate.reason || "过滤")}</td></tr>`;
+    }).join("");
+    document.getElementById("detections").innerHTML = rows || "<tr><td>当前帧无检测</td></tr>";
+  } catch (_) {
+    document.getElementById("fps").textContent = "--";
+  }
+  document.getElementById("overlay").src = "latest_overlay.png?ts=" + Date.now();
+  document.getElementById("riskMap").src = "risk_map_snapshot.png?ts=" + Date.now();
+  const s = document.getElementById("status");
+  s.textContent = ok ? "雷达/里程计正常" : "等待数据";
+  s.className = ok ? "ok" : "bad";
+}
+refresh();
+setInterval(refresh, 1200);
+</script>
+</body>
+</html>

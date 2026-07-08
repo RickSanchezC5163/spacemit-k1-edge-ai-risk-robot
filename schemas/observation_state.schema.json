@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "observation_state.schema.json",
+  "title": "ObservationState",
+  "type": "object",
+  "required": ["observation_id", "timestamp", "base_zero"],
+  "properties": {
+    "observation_id": {"type": "string"},
+    "timestamp": {"type": "string"},
+    "front_min": {"type": ["number", "null"]},
+    "front_p10": {"type": ["number", "null"]},
+    "left_p10": {"type": ["number", "null"]},
+    "right_p10": {"type": ["number", "null"]},
+    "odom_x": {"type": ["number", "null"]},
+    "odom_y": {"type": ["number", "null"]},
+    "odom_yaw": {"type": ["number", "null"]},
+    "map_progress": {"type": ["number", "null"]},
+    "risk_detected": {"type": "boolean"},
+    "risk_confidence": {"type": ["number", "null"]},
+    "risk_class_id": {"type": ["integer", "null"]},
+    "risk_distance_m": {"type": ["number", "null"]},
+    "base_zero": {"type": "boolean"},
+    "arm_ready": {"type": "boolean"},
+    "capture_recent": {"type": "boolean"},
+    "steps_since_capture": {"type": "integer"},
+    "consecutive_fast_arc": {"type": "integer", "minimum": 0},
+    "total_forward_m": {"type": "number", "minimum": 0}
+  },
+  "additionalProperties": true
+}

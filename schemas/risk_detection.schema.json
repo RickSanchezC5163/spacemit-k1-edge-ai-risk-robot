@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "risk_detection.schema.json",
+  "title": "RiskDetection",
+  "type": "object",
+  "required": [
+    "risk_detection_id",
+    "backend",
+    "model_used",
+    "local_inference",
+    "online_api_used",
+    "runtime_backend",
+    "precision",
+    "acceleration_target",
+    "detections"
+  ],
+  "properties": {
+    "risk_detection_id": {"type": "string"},
+    "backend": {"type": "string"},
+    "detection_mode": {"type": "string"},
+    "model_used": {"type": "boolean"},
+    "local_inference": {"type": "boolean"},
+    "online_api_used": {"type": "boolean"},
+    "runtime_backend": {"type": "string"},
+    "precision": {"type": "string"},
+    "acceleration_target": {"type": "string"},
+    "backend_available": {"type": "boolean"},
+    "fallback_used": {"type": "boolean"},
+    "fallback_backend": {"type": ["string", "null"]},
+    "inference_ready": {"type": "boolean"},
+    "inference_executed": {"type": "boolean"},
+    "model_name": {"type": "string"},
+    "model_size_mb": {"type": "number"},
+    "input_size": {"type": "array", "items": {"type": "integer"}},
+    "load_latency_ms": {"type": ["number", "null"]},
+    "inference_latency_ms": {"type": ["number", "null"]},
+    "inference_fps": {"type": ["number", "null"]},
+    "latency_ms": {"type": ["number", "null"]},
+    "fps": {"type": ["number", "null"]},
+    "depth_localization_attempted": {"type": "boolean"},
+    "depth_localization_applied_count": {"type": "integer"},
+    "depth_localization_status": {"type": "string"},
+    "detections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["class_name", "confidence", "bbox_xywh"],
+        "properties": {
+          "class_name": {"type": "string"},
+          "confidence": {"type": "number"},
+          "bbox_xywh": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+          "depth_median_m": {"type": ["number", "null"]},
+          "bbox_valid_depth_ratio": {"type": ["number", "null"]},
+          "camera_point_xyz_m": {"type": ["object", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "claim_boundary": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

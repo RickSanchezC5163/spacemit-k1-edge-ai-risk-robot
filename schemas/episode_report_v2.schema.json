@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "episode_report_v2.schema.json",
+  "title": "EpisodeReportV2",
+  "type": "object",
+  "required": [
+    "episode_id",
+    "episode_kind",
+    "started_at",
+    "ended_at",
+    "observation_state",
+    "primitive_actions",
+    "primitive_results",
+    "risk_detections",
+    "risk_map_summary",
+    "action_candidates",
+    "safety_gate_results",
+    "report_outputs",
+    "benchmarks",
+    "claim_boundary"
+  ],
+  "properties": {
+    "episode_id": {"type": "string"},
+    "episode_kind": {"type": "string"},
+    "started_at": {"type": "string"},
+    "ended_at": {"type": "string"},
+    "observation_state": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["observation_id", "timestamp", "base_zero"],
+        "properties": {
+          "observation_id": {"type": "string"},
+          "timestamp": {"type": "string"},
+          "front_min": {"type": ["number", "null"]},
+          "front_p10": {"type": ["number", "null"]},
+          "left_p10": {"type": ["number", "null"]},
+          "right_p10": {"type": ["number", "null"]},
+          "odom_x": {"type": ["number", "null"]},
+          "odom_y": {"type": ["number", "null"]},
+          "odom_yaw": {"type": ["number", "null"]},
+          "map_progress": {"type": ["number", "null"]},
+          "risk_detected": {"type": "boolean"},
+          "risk_confidence": {"type": ["number", "null"]},
+          "risk_class_id": {"type": ["integer", "null"]},
+          "risk_distance_m": {"type": ["number", "null"]},
+          "base_zero": {"type": "boolean"},
+          "arm_ready": {"type": "boolean"},
+          "capture_recent": {"type": "boolean"},
+          "steps_since_capture": {"type": "integer"},
+          "consecutive_fast_arc": {"type": "integer", "minimum": 0},
+          "total_forward_m": {"type": "number", "minimum": 0}
+        },
+        "additionalProperties": true
+      }
+    },
+    "primitive_actions": {"type": "array"},
+    "primitive_results": {"type": "array"},
+    "risk_detections": {"type": "array"},
+    "risk_map_summary": {"type": "object"},
+    "action_candidates": {"type": "array"},
+    "safety_gate_results": {"type": "array"},
+    "report_outputs": {"type": "array"},
+    "benchmarks": {
+      "type": "object",
+      "properties": {
+        "vision": {
+          "type": "object",
+          "properties": {
+            "backend": {"type": ["string", "null"]},
+            "latency_ms": {"type": ["number", "null"]},
+            "fps": {"type": ["number", "null"]},
+            "model_used": {"type": ["boolean", "null"]},
+            "local_inference": {"type": ["boolean", "null"]},
+            "online_api_used": {"type": ["boolean", "null"]}
+          },
+          "additionalProperties": true
+        },
+        "llm": {
+          "type": "object",
+          "properties": {
+            "backend": {"type": ["string", "null"]},
+            "local_llm_used": {"type": ["boolean", "null"]},
+            "online_api_used": {"type": ["boolean", "null"]},
+            "model_name": {"type": ["string", "null"]},
+            "model_size_mb": {"type": ["number", "null"]},
+            "ttft_ms": {"type": ["number", "null"]},
+            "tokens_per_second": {"type": ["number", "null"]},
+            "total_tokens": {"type": ["integer", "null"]},
+            "peak_memory_mb": {"type": ["number", "null"]}
+          },
+          "additionalProperties": true
+        },
+        "rl": {
+          "type": "object",
+          "properties": {
+            "policy_name": {"type": ["string", "null"]},
+            "action_space_version": {"type": ["string", "null"]},
+            "hardware_connected": {"type": ["boolean", "null"]},
+            "cmd_vel_published": {"type": ["boolean", "null"]},
+            "servo_pulse_output": {"type": ["boolean", "null"]},
+            "episodes": {"type": ["integer", "null"]},
+            "checkpoint_count": {"type": ["integer", "null"]}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "claim_boundary": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,19 @@
+seed: 11
+episodes: 40
+steps_per_episode: 30
+checkpoint_every: 20
+learning_rate: 0.02
+action_space_config: configs/rl_action_space.yaml
+env:
+  name: semantic_guarded_nav_env
+  max_steps: 40
+safety_boundary:
+  high_level_actions_only: true
+  cmd_vel_published: false
+  servo_pulse_output: false
+  hardware_connected: false
+  ros_started: false
+claim_boundary:
+  - "Semantic PPO training is mock/sim interface bring-up only."
+  - "It does not control K1 hardware."
+  - "Real execution must be gated by Step7/P4 runners."

@@ -1,0 +1,71 @@
+schema_version: rl_semantic_action_space_v1
+source_reference: docs/step7e2_fastdemo_reproduction_20260630.md
+execution_boundary:
+  rl_outputs_high_level_actions_only: true
+  no_cmd_vel_output: true
+  no_servo_pulse_output: true
+  real_execution_mode_default: dry_run_only
+  real_runner_must_gate_actions: true
+actions:
+  - id: 0
+    name: HOLD
+    enabled_by_default: true
+  - id: 1
+    name: FORWARD_0P15
+    enabled_by_default: true
+  - id: 2
+    name: ARC_FAST_LEFT
+    enabled_by_default: true
+  - id: 3
+    name: ARC_FAST_RIGHT
+    enabled_by_default: true
+  - id: 4
+    name: HOLD_CAPTURE
+    enabled_by_default: true
+  - id: 5
+    name: ARM_NO_LOAD_RESPONSE
+    enabled_by_default: true
+  - id: 6
+    name: STOP_SAFE
+    enabled_by_default: true
+  - id: 7
+    name: SAVE_MAP
+    enabled_by_default: false
+  - id: 8
+    name: ARM_CLEAR_CANDIDATE_DRYRUN
+    enabled_by_default: false
+observation_fields:
+  - front_min
+  - front_p10
+  - left_p10
+  - right_p10
+  - odom_x
+  - odom_y
+  - odom_yaw
+  - map_progress
+  - risk_detected
+  - risk_confidence
+  - risk_class_id
+  - risk_distance_m
+  - base_zero
+  - arm_ready
+  - capture_recent
+  - steps_since_capture
+  - consecutive_fast_arc
+  - total_forward_m
+reward_terms:
+  positive:
+    - new_area_explored
+    - safe_target_approach
+    - hold_capture_after_risk
+    - risk_point_projected
+    - stop_safe_task_complete
+    - arm_no_load_after_valid_risk
+  negative:
+    - collision
+    - front_p10_too_low_while_forward
+    - repeated_capture_without_risk
+    - risk_seen_without_capture
+    - arm_requested_without_base_zero
+    - repeated_invalid_arc
+    - timeout

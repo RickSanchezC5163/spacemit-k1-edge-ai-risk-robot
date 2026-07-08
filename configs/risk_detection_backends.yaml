@@ -1,0 +1,101 @@
+schema_version: risk_detection_backends_v2
+default_backend: hsv_red_rule
+fallback_backend: hsv_red_rule
+claim_boundary:
+  - "hsv_red_rule is a deterministic baseline, not an AI model."
+  - "Local model backends must be benchmarked on K1 before competition claims."
+  - "Online API use is forbidden for competition inference claims."
+  - "Do not claim NPU acceleration without measured K1 backend evidence."
+backends:
+  hsv_red_rule:
+    enabled: true
+    available: true
+    model_used: false
+    local_inference: true
+    online_api_used: false
+    runtime_backend: pil_hsv_rule
+    precision: none
+    acceleration_target: cpu
+    model_path: null
+    input_size: [640, 480]
+    primitive: RISK_DETECT_HSV_RED_RULE
+    claim_boundary:
+      - "HSV red-rule is a deterministic color rule baseline, not AI inference."
+      - "It should not be used for visual recognition accuracy claims."
+  opencv_dnn_onnx:
+    enabled: true
+    available: true
+    model_used: true
+    local_inference: true
+    online_api_used: false
+    runtime_backend: opencv_dnn
+    precision: fp32
+    acceleration_target: cpu
+    model_path: models/risk_vision/yolov8n.onnx
+    input_size: [640, 640]
+    primitive: RISK_DETECT_LOCAL_MODEL
+    claim_boundary:
+      - "OpenCV DNN ONNX is a K1 CPU fallback candidate."
+      - "Do not claim deployed model accuracy or K1 performance until benchmarked on K1."
+  yolov8n_onnx_cpu:
+    enabled: true
+    available: true
+    model_used: true
+    local_inference: true
+    online_api_used: false
+    runtime_backend: onnxruntime
+    precision: fp32
+    acceleration_target: cpu
+    model_path: models/risk_vision/yolov8n.onnx
+    input_size: [640, 640]
+    primitive: RISK_DETECT_LOCAL_MODEL
+    claim_boundary:
+      - "YOLOv8n ONNX CPU is the target local model backend."
+      - "Server-side inference must not be described as K1 local inference."
+  ncnn_int8:
+    enabled: false
+    available: false
+    model_used: true
+    local_inference: true
+    online_api_used: false
+    runtime_backend: ncnn
+    precision: int8
+    acceleration_target: riscv_rvv
+    model_path:
+      param: models/risk_vision/yolov8n_int8.param
+      bin: models/risk_vision/yolov8n_int8.bin
+    input_size: [640, 640]
+    primitive: RISK_DETECT_LOCAL_MODEL
+    claim_boundary:
+      - "ncnn int8 is an RVV optimization candidate."
+      - "Do not claim RVV/NPU acceleration until K1 benchmark evidence exists."
+  printed_risk_classifier_cpu:
+    enabled: false
+    available: false
+    model_used: true
+    local_inference: true
+    online_api_used: false
+    runtime_backend: onnxruntime
+    precision: fp32
+    acceleration_target: cpu
+    model_path: models/risk_vision/printed_risk_classifier.onnx
+    input_size: [224, 224]
+    primitive: RISK_CLASSIFY_PRINTED_RISK
+    claim_boundary:
+      - "Printed risk classifier is for A4 printed-risk simulation only."
+      - "Do not claim real-world defect detection accuracy without validation."
+  stub_local_model:
+    enabled: true
+    available: true
+    model_used: false
+    local_inference: true
+    online_api_used: false
+    runtime_backend: stub
+    precision: none
+    acceleration_target: none
+    model_path: null
+    input_size: [640, 480]
+    primitive: RISK_DETECT_LOCAL_MODEL
+    claim_boundary:
+      - "Stub backend validates interface plumbing only."
+      - "Stub detections are not model inference results."

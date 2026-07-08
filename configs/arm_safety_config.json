@@ -1,0 +1,391 @@
+{
+  "_protocol_version": "arm_safety_v1",
+  "_description": "K1 5-DOF bus servo arm safety boundary configuration. All values are conservative defaults pending real calibration data.",
+
+  "safety_gates": {
+    "arm_enabled": false,
+    "hardware_access_allowed": false,
+    "serial_write_allowed": false,
+    "contact_allowed": false,
+    "obstacle_removal_allowed": false,
+    "hardware_executed": false,
+    "dry_run": true,
+    "_note": "All gates must be explicitly set to true before any physical arm movement. Arm-B phase gates below."
+  },
+
+  "poses": {
+    "safe_idle_home_like_6b": {
+      "description": "Safe idle pose to hold before startup and after no-load sample action. This is the measured 6b pose.",
+      "time_ms": 2000,
+      "servos": {
+        "1": 510,
+        "2": 771,
+        "3": 426,
+        "4": 503,
+        "5": 497
+      }
+    }
+  },
+
+  "phase_gates": {
+    "arm_b1_plan_only": {
+      "arm_enabled": false,
+      "hardware_access_allowed": false,
+      "serial_write_allowed": false,
+      "description": "Generate and validate motion plans without any hardware access"
+    },
+    "arm_b1_send_home_once": {
+      "arm_enabled": true,
+      "hardware_access_allowed": true,
+      "serial_write_allowed": true,
+      "contact_allowed": false,
+      "obstacle_removal_allowed": false,
+      "allowed_action_type": "ARM_SEND_HOME_ONCE",
+      "required_target_pose": "safe_idle_home_like_6b",
+      "max_sequence_length": 1,
+      "min_duration_ms": 2000,
+      "description": "Send the measured safe idle 6b home pose exactly once under explicit hardware confirmation"
+    },
+    "arm_b2_single_joint_small_angle": {
+      "arm_enabled": true,
+      "hardware_access_allowed": true,
+      "serial_write_allowed": true,
+      "contact_allowed": false,
+      "obstacle_removal_allowed": false,
+      "max_pulse_deviation_from_center": null,
+      "max_pulse_deviation_from_home_by_servo": {
+        "1": 100,
+        "2": 100,
+        "3": 100,
+        "4": 100,
+        "5": 150
+      },
+      "max_single_joint_count": 1,
+      "test_offsets_from_home": {
+        "1": [100],
+        "2": [-100],
+        "3": [100],
+        "4": [-33],
+        "5": [-137]
+      },
+      "allowed_single_servo_targets": {
+        "1": [610],
+        "2": [671],
+        "3": [526],
+        "4": [470],
+        "5": [360]
+      },
+      "recommended_execution_order": [
+        {"servo_id": 5, "target_pulse": 360, "home_pulse": 497, "description": "gripper no-load close/open check"},
+        {"servo_id": 4, "target_pulse": 470, "home_pulse": 503, "description": "wrist small-angle check"},
+        {"servo_id": 3, "target_pulse": 526, "home_pulse": 426, "description": "elbow small-angle check"},
+        {"servo_id": 2, "target_pulse": 671, "home_pulse": 771, "description": "shoulder downward-only check; do not exceed 771"},
+        {"servo_id": 1, "target_pulse": 610, "home_pulse": 510, "description": "base yaw check only while ID2 is at least 600"}
+      ],
+      "return_pose_required": "safe_idle_home_like_6b",
+      "hardware_confirmation_flags": [
+        "--enable-hardware-write",
+        "--confirm-single-servo-no-load"
+      ],
+      "no_load_only": true,
+      "blocked_offsets_from_home": {
+        "2": {
+          "positive": "ID2 home_pulse=771 is already close to the upper controller mounting plate; do not test home+100."
+        }
+      },
+      "description": "Single-servo no-load checks from measured 6b home; no contact and no obstacle removal"
+    },
+    "arm_b3_full_no_load_sequence": {
+      "arm_enabled": true,
+      "hardware_access_allowed": true,
+      "serial_write_allowed": true,
+      "contact_allowed": false,
+      "obstacle_removal_allowed": false,
+      "max_pulse_range_per_joint": "full",
+      "description": "Complete no-load motion sequence, all joints, no external contact"
+    },
+    "arm_c_no_load_home_cycle": {
+      "arm_enabled": true,
+      "hardware_access_allowed": true,
+      "serial_write_allowed": true,
+      "contact_allowed": false,
+      "obstacle_removal_allowed": false,
+      "description": "Empty load: move arm through home → reach → home cycle"
+    },
+    "arm_d_light_contact_foam": {
+      "arm_enabled": true,
+      "hardware_access_allowed": true,
+      "serial_write_allowed": true,
+      "contact_allowed": true,
+      "contact_material": "foam_only",
+      "max_contact_force_n": 2.0,
+      "obstacle_removal_allowed": false,
+      "description": "Light contact with foam obstacles only, no real debris removal"
+    },
+    "arm_e_real_obstacle_removal": {
+      "arm_enabled": true,
+      "hardware_access_allowed": true,
+      "serial_write_allowed": true,
+      "contact_allowed": true,
+      "obstacle_removal_allowed": true,
+      "description": "Full obstacle removal capability, all safety gates open"
+    }
+  },
+
+  "serial": {
+    "port_linux": "/dev/ttyUSB0",
+    "port_jetson": "/dev/ttyTHS1",
+    "port_riscv": "/dev/ttyS1",
+    "baudrate": 9600,
+    "timeout_s": 0.5,
+    "write_delay_ms": 20,
+    "max_consecutive_write_errors": 3,
+    "_note": "Port depends on platform. K1 Muse Pi Pro likely /dev/ttyS1 or USB UART."
+  },
+
+  "protocol": {
+    "frame_header": [85, 85],
+    "cmd_servo_move": 3,
+    "cmd_action_group_run": 6,
+    "cmd_action_group_stop": 7,
+    "cmd_action_group_speed": 11,
+    "cmd_get_battery_voltage": 15,
+    "bus_servo_pulse_min": 0,
+    "bus_servo_pulse_max": 1000,
+    "bus_servo_pulse_center": 500,
+    "bus_servo_time_min_ms": 0,
+    "bus_servo_time_max_ms": 30000,
+    "valid_servo_ids": [1, 2, 3, 4, 5]
+  },
+
+  "joints": {
+    "1": {
+      "name": "id1_yaw",
+      "servo_id": 1,
+      "type": "bus_servo",
+      "axis": "z",
+      "description": "Base yaw rotation — rotates entire arm assembly around vertical axis",
+      "pulse_min": 0,
+      "pulse_max": 1000,
+      "pulse_center": 500,
+      "pulse_deviation_max": 500,
+      "angle_range_deg": [-180, 180],
+      "angle_center_deg": 0,
+      "speed_max_pulse_per_s": 500,
+      "default_move_time_ms": 1000,
+      "home_pulse": 510,
+      "home_angle_deg": 0,
+      "soft_limit_lower_pulse": 50,
+      "soft_limit_upper_pulse": 950,
+      "hard_limit_lower_pulse": 0,
+      "hard_limit_upper_pulse": 1000,
+      "current_limit_ma": 1500,
+      "temperature_limit_c": 65
+    },
+    "2": {
+      "name": "id2_shoulder",
+      "servo_id": 2,
+      "type": "bus_servo",
+      "axis": "y",
+      "description": "Shoulder pitch — upper arm (19cm), raises/lowers the arm",
+      "pulse_min": 0,
+      "pulse_max": 1000,
+      "pulse_center": 500,
+      "pulse_deviation_max": 500,
+      "angle_range_deg": [-90, 90],
+      "angle_center_deg": 0,
+      "speed_max_pulse_per_s": 400,
+      "default_move_time_ms": 1000,
+      "home_pulse": 771,
+      "home_angle_deg": 0,
+      "soft_limit_lower_pulse": 100,
+      "soft_limit_upper_pulse": 771,
+      "hard_limit_lower_pulse": 0,
+      "hard_limit_upper_pulse": 1000,
+      "current_limit_ma": 1800,
+      "temperature_limit_c": 65
+    },
+    "3": {
+      "name": "id3_elbow",
+      "servo_id": 3,
+      "type": "bus_servo",
+      "axis": "y",
+      "description": "Elbow pitch — 4cm link + second 19cm arm segment",
+      "pulse_min": 0,
+      "pulse_max": 1000,
+      "pulse_center": 500,
+      "pulse_deviation_max": 500,
+      "angle_range_deg": [-105, 105],
+      "angle_center_deg": 0,
+      "speed_max_pulse_per_s": 400,
+      "default_move_time_ms": 1000,
+      "home_pulse": 426,
+      "home_angle_deg": 0,
+      "soft_limit_lower_pulse": 80,
+      "soft_limit_upper_pulse": 920,
+      "hard_limit_lower_pulse": 0,
+      "hard_limit_upper_pulse": 1000,
+      "current_limit_ma": 1500,
+      "temperature_limit_c": 65
+    },
+    "4": {
+      "name": "id4_wrist",
+      "servo_id": 4,
+      "type": "bus_servo",
+      "axis": "y",
+      "description": "Wrist pitch — controls gripper orientation",
+      "pulse_min": 0,
+      "pulse_max": 1000,
+      "pulse_center": 500,
+      "pulse_deviation_max": 500,
+      "angle_range_deg": [-90, 90],
+      "angle_center_deg": 0,
+      "speed_max_pulse_per_s": 500,
+      "default_move_time_ms": 800,
+      "home_pulse": 503,
+      "home_angle_deg": 0,
+      "soft_limit_lower_pulse": 100,
+      "soft_limit_upper_pulse": 900,
+      "hard_limit_lower_pulse": 0,
+      "hard_limit_upper_pulse": 1000,
+      "current_limit_ma": 1200,
+      "temperature_limit_c": 65
+    },
+    "5": {
+      "name": "id5_gripper",
+      "servo_id": 5,
+      "type": "bus_servo",
+      "axis": "z",
+      "description": "Gripper open/close — jaw opening angle",
+      "pulse_min": 0,
+      "pulse_max": 1000,
+      "pulse_center": 500,
+      "pulse_deviation_max": 500,
+      "angle_range_deg": [0, 60],
+      "angle_center_deg": 30,
+      "speed_max_pulse_per_s": 600,
+      "default_move_time_ms": 500,
+      "home_pulse": 497,
+      "home_angle_deg": 30,
+      "soft_limit_lower_pulse": 100,
+      "soft_limit_upper_pulse": 900,
+      "hard_limit_lower_pulse": 0,
+      "hard_limit_upper_pulse": 1000,
+      "current_limit_ma": 1000,
+      "temperature_limit_c": 65,
+      "gripper_open_pulse": 0,
+      "gripper_close_pulse": 650,
+      "gripper_open_angle_deg": 60,
+      "gripper_close_angle_deg": 0
+    }
+  },
+
+  "workspace": {
+    "_note": "Workspace boundaries in meters, relative to chassis center (x=forward, y=left, z=up). Derived from arm kinematics with chassis 27x27cm.",
+    "arm_base": {
+      "x": -0.005,
+      "y": 0.0,
+      "z": 0.13,
+      "description": "ID1 rotation axis position relative to chassis center"
+    },
+    "reach_max": {
+      "forward_m": 0.45,
+      "rearward_m": 0.05,
+      "left_m": 0.40,
+      "right_m": 0.40,
+      "up_m": 0.55,
+      "down_m": 0.0,
+      "description": "Maximum reach envelope from chassis center"
+    },
+    "safe_zone": {
+      "forward_m": 0.35,
+      "rearward_m": 0.0,
+      "left_m": 0.30,
+      "right_m": 0.30,
+      "up_m": 0.45,
+      "down_m": 0.01,
+      "description": "Safe operating zone — arm stays within these bounds during normal operation"
+    },
+    "chassis_clearance": {
+      "front_clearance_m": 0.02,
+      "side_clearance_m": 0.02,
+      "top_clearance_m": 0.01,
+      "description": "Minimum clearance from chassis edges during arm movement"
+    },
+    "ground_clearance_m": 0.01,
+    "lidar_keepout": {
+      "center_x": 0.075,
+      "center_z": 0.13,
+      "radius_m": 0.08,
+      "description": "Keep-out zone around N10P lidar"
+    },
+    "d435_keepout": {
+      "center_x": 0.105,
+      "center_z": 0.11,
+      "box_m": [0.12, 0.06, 0.06],
+      "description": "Keep-out zone around D435 camera"
+    }
+  },
+
+  "robot_level_safety": {
+    "require_base_zero_before_arm": true,
+    "require_base_zero_during_arm": true,
+    "require_front_p10_above_m": 0.40,
+    "arm_cannot_move_while_driving": true,
+    "emergency_stop_topic": "/arm/emergency_stop",
+    "heartbeat_period_s": 0.5,
+    "heartbeat_timeout_s": 2.0,
+    "auto_home_on_estop": true,
+    "auto_home_on_heartbeat_loss": true
+  },
+
+  "pulse_safety_rules": {
+    "max_single_step_pulse_change": 300,
+    "max_total_pulse_change_per_action": 700,
+    "min_inter_command_delay_ms": 50,
+    "require_monotonic_toward_target": true,
+    "_comment": "Single step can change pulse by at most 300 (30% of range). Total per ARM_REMOVE_OBSTACLE at most 700. Commands must move monotonically toward target."
+  },
+
+  "coupled_safety_rules": {
+    "id1_rotation_requires": {
+      "enabled": true,
+      "id1_servo": 1,
+      "support_servo": 2,
+      "support_min_pulse": 600,
+      "description": "ID1 yaw rotation is only allowed when ID2 is at least 600 because the current home pose is close to the controller mounting plate."
+    },
+    "conditional_joint_ranges": [
+      {
+        "description": "When ID2 is between 250 and 650, ID3/ID4 must stay in the measured safe ranges.",
+        "when": {
+          "servo_id": 2,
+          "pulse_gt": 250,
+          "pulse_lt": 650
+        },
+        "limits": {
+          "3": [400, 700],
+          "4": [300, 470]
+        }
+      }
+    ]
+  },
+
+  "validation_checks": [
+    "check_servo_id_valid",
+    "check_pulse_in_range",
+    "check_pulse_in_soft_limit",
+    "check_pulse_in_hard_limit",
+    "check_pulse_step_size",
+    "check_move_time_in_range",
+    "check_workspace_collision",
+    "check_lidar_keepout",
+    "check_d435_keepout",
+    "check_chassis_clearance",
+    "check_coupled_joint_interlocks",
+    "check_robot_base_zero",
+    "check_robot_not_driving",
+    "check_heartbeat_active",
+    "check_emergency_stop_not_active"
+  ]
+}

@@ -1,0 +1,16 @@
+<!--
+  Guarded NavigateToPose tree for first real-robot SLAM tests.
+  It intentionally omits Spin, BackUp, Wait, and costmap-clearing recovery
+  behaviors so a failed plan/controller does not trigger autonomous recovery
+  motion on the Tank chassis.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <PipelineSequence name="NavigateWithSlowReplanningNoRecovery">
+      <RateController hz="0.5">
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      </RateController>
+      <FollowPath path="{path}" controller_id="FollowPath"/>
+    </PipelineSequence>
+  </BehaviorTree>
+</root>

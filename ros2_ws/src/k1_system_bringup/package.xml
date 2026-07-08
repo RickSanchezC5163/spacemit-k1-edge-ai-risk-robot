@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>k1_system_bringup</name>
+  <version>0.1.0</version>
+  <description>Unified non-arm bring-up launch package for the K1 robot.</description>
+  <maintainer email="team@example.invalid">K1 Robot Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>k1_light_control</exec_depend>
+  <exec_depend>k1_risk_engine</exec_depend>
+  <exec_depend>k1_event_logger</exec_depend>
+  <exec_depend>k1_sensor_event_adapter</exec_depend>
+  <exec_depend>turn_on_wheeltec_robot</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

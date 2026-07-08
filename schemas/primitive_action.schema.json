@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "primitive_action.schema.json",
+  "title": "PrimitiveAction",
+  "type": "object",
+  "required": ["action_id", "primitive", "requested_at", "execution_mode"],
+  "properties": {
+    "action_id": {"type": "string"},
+    "primitive": {"type": "string"},
+    "requested_at": {"type": "string"},
+    "execution_mode": {"enum": ["dry_run", "sim", "hardware_gated"]},
+    "requires_base_zero": {"type": "boolean"},
+    "safety_gate_required": {"type": "boolean"},
+    "params": {"type": "object"}
+  },
+  "additionalProperties": true
+}

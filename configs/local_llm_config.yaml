@@ -1,0 +1,32 @@
+schema_version: local_llm_config_v1
+default_backend: deterministic
+backends:
+  deterministic:
+    available: true
+    local_llm_used: false
+    online_api_used: false
+  llama_cpp_qwen_0_5b:
+    available: false
+    local_llm_used: true
+    online_api_used: false
+    model_path: models/llm/qwen2_0_5b_q4.gguf
+  llama_cpp_tinyllama:
+    available: false
+    local_llm_used: true
+    online_api_used: false
+    model_path: models/llm/tinyllama_q4.gguf
+  stub_local_llm:
+    available: true
+    local_llm_used: false
+    online_api_used: false
+benchmark_fields:
+  - ttft_ms
+  - tokens_per_second
+  - total_tokens
+  - peak_memory_mb
+  - model_name
+  - model_size_mb
+claim_boundary:
+  - "deterministic backend is not a real LLM."
+  - "Local LLM claims require llama.cpp or equivalent backend benchmark data."
+  - "Online API use is forbidden."
