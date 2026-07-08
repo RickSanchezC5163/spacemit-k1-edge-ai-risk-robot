@@ -12,8 +12,9 @@
 [![YOLOv8n](https://img.shields.io/badge/YOLOv8n-Risk%20Vision-red)](https://github.com/ultralytics/ultralytics)
 [![Local LLM](https://img.shields.io/badge/LLM-Local%20Inference-black)](https://github.com/ggml-org/llama.cpp)
 
-[项目报告](docs/report/spacemit_k1_edge_ai_robot_report.docx) |
-[演示视频](demo/demo_clip_20260708_220330.mp4) |
+[项目报告 PDF](docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf) |
+[项目报告 DOCX](docs/report/spacemit_k1_edge_ai_robot_report.docx) |
+[演示视频](demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4) |
 [自主建图录屏](demo/recordings/) |
 [部署说明](docs/k1_yolov8n_onnx_deployment_20260702.md) |
 [模型目录](models/risk_vision/) |
@@ -253,7 +254,7 @@ bash tools/finalize_prelim_demo_k1.sh <run_dir>
 models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 ```
 
-大规模原始数据集、长视频、ROS bag 和临时运行输出未纳入仓库。数据采集、模型训练、量化和阈值调整过程见：
+大规模原始数据集、ROS bag 和临时运行输出未纳入仓库；最终演示视频已放入 `demo/`，项目报告同时提供 DOCX 与 PDF 版本。数据采集、模型训练、量化和阈值调整过程见：
 
 - [风险视觉模型完成路径](docs/risk_vision_model_completion_path_20260707.md)
 - [K1 YOLOv8n ONNX 部署说明](docs/k1_yolov8n_onnx_deployment_20260702.md)
@@ -279,15 +280,23 @@ models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 ## 文档索引
 
 - [提交材料索引](SUBMISSION.md)
-- [公开源码范围说明](docs/OPEN_SOURCE_SCOPE.md)
-- [最终项目报告](docs/report/spacemit_k1_edge_ai_robot_report.docx)
+- [开源范围说明](docs/OPEN_SOURCE_SCOPE.md)
+- [最终项目报告 PDF](docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf)
+- [最终项目报告 DOCX](docs/report/spacemit_k1_edge_ai_robot_report.docx)
+- [最终演示视频](demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4)
 - [遥控建图 + YOLO + 机械臂演示设计](docs/prelim_remote_mapping_yolo_arm_demo_20260703.md)
 - [系统协议与整体逻辑](docs/k1_full_system_protocol_and_logic_20260630.md)
 - [本地 LLM 报告接口](docs/local_llm_report_interface_20260701.md)
 - [风险地图总结接口](docs/risk_map_summary_interface_20260702.md)
 - [机械臂 SW2URDF 导入审计](docs/mechanical_arm_1_import_audit_20260711.md)
 
-## 许可协议
+## 写在最后
+
+从一块国产 RISC-V 开发板出发，我们完成了感知、推理、规划和执行的闭环，也亲身经历了国产平台从“能够运行”走向“稳定运行”所需要跨越的工程门槛。驱动适配、模型算子转换、EP 后端稳定性、传感器时序和进程启动顺序，这些看似琐碎的调试工作，最终共同构成了一个真正能够运行起来的端侧智能机器人样机。
+
+今天的 K1 还不是终点，当前系统也仍然只是一次小规模尝试。但当一块国产芯片真正驱动机器人看见环境、理解风险并作出回应时，我们看到的不只是一个作品的完成，更看到了一条仍在延伸的道路。我们期待国产 RISC-V 继续突破算力、软件和生态边界，也愿意成为这段成长过程中的使用者、记录者和参与者。
+
+## 开源协议
 
 本仓库采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权。
 允许学习、研究、测试、教育和非商用展示使用；未经额外书面授权，

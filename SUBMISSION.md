@@ -26,9 +26,9 @@ https://github.com/<your-account>/spacemit-k1-edge-ai-risk-robot
 | 本地 LLM 报告 | `tools/run_local_llm_summary.py`、`configs/local_llm_config.yaml` |
 | 机械臂安全响应 | `src/arm_safety.py`、`configs/arm_safety_config.json` |
 | RRT/MoveIt/RL 验证接口 | `sim/tracked_robot_description/`、`tools/gz_sync_model_pose_from_odom.py`、`tools/ros2_twist_relay.py`、`rl/`、`configs/rl_action_space.yaml`、`configs/primitive_registry.yaml` |
-| 项目报告 | `docs/report/spacemit_k1_edge_ai_robot_report.docx` |
+| 项目报告 | `docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf`、`docs/report/spacemit_k1_edge_ai_robot_report.docx` |
 | 设计文件/硬件图片 | `docs/hardware/`、`firmware/` |
-| 演示视频 | `demo/demo_clip_20260708_220330.mp4`、`demo/recordings/` 或最终网盘/GitHub Release 链接 |
+| 演示视频 | `demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4`、`demo/demo_clip_20260708_220330.mp4`、`demo/recordings/` |
 
 ## 2026-07-11 自主建图补充材料
 
@@ -58,14 +58,14 @@ Gazebo 履带底盘 + N10P 雷达 + D435
 作品名称：K1 边缘 AI 风险探测机器人
 赛道：题二：边缘 AI 应用
 代码仓库：https://github.com/<your-account>/spacemit-k1-edge-ai-risk-robot
-演示视频：<填写视频链接或 GitHub Release 链接>
-项目报告：仓库 docs/report/spacemit_k1_edge_ai_robot_report.docx
+演示视频：仓库 demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4
+项目报告：仓库 docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf
 主要说明：项目在 K1 MUSE Pi Pro 本地完成 D435 视觉输入、YOLOv8n 量化模型推理、风险点地图化、本地 LLM 报告生成和机械臂安全响应链路。
 ```
 
 ## 上传前检查
 
 - `git status` 中不应出现 `outputs/`、`datasets/`、`*.bag`、`*.db3`、大体积临时视频。
-- 正式演示视频建议放 GitHub Release、网盘或比赛指定平台，仓库内只保留压缩样例。
+- 当前仓库已包含压缩后的正式演示视频；如后续平台要求外链，可同步上传至 GitHub Release、网盘或比赛指定平台。
 - 若 GitHub 提示文件超过 100 MB，不要强行提交，改用 Release 或外链。
 - 提交前确认 README 中的 K1 IP、模型路径、演示命令与最终设备一致。
