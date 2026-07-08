@@ -1,35 +1,157 @@
+<div align="center">
+
 # K1 Edge AI Risk Inspection Robot
 
-本仓库为进迭时空 K1 MUSE Pi Pro 边缘 AI 应用赛道的开源提交版，主体任务是构建一套面向 GPS 拒止、通信受限场景的端侧风险探测机器人系统。系统在 K1 本地完成遥控建图、D435 RGB-D 感知、YOLOv8n 风险识别、风险点地图落图、本地 LLM 报告生成，并预留机械臂安全处置与 RRT/MoveIt/RL 策略验证接口。
+### Remote Mapping, Local YOLO Risk Perception, Risk Mapping, RRT+MoveIt Response, and Local LLM Reporting on SpaceMIT K1
 
-## 功能链路
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-blue)
+![SpaceMIT K1](https://img.shields.io/badge/SpaceMIT-K1%20MUSE%20Pi%20Pro-purple)
+![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-SpaceMIT%20EP-orange)
+![YOLOv8n](https://img.shields.io/badge/YOLOv8n-Risk%20Vision-red)
+![Local LLM](https://img.shields.io/badge/LLM-Local%20Inference-black)
 
-1. 遥控建图：`/input_cmd_vel` 经安全守护模块过滤后发布到 `/cmd_vel_guarded`，同步生成 `/map`。
-2. 安全守护：读取 `/scan` 前向距离，按急停、慢速、放行三档限制底盘速度。
-3. 本地视觉：K1 端 D435 图像输入，ONNX Runtime SpaceMIT EP 执行 YOLOv8n 量化模型推理。
-4. 风险空间化：将 bbox、depth、camera info、odom 融合成地图坐标风险点，支持同类近距离合并。
-5. 可视化展示：浏览器 dashboard 显示 YOLO overlay、infer_fps、front_min、odom、risk map 和报警信息。
-6. 报告生成：本地 LLM 根据风险点、处置规则和任务上下文生成巡检总结报告。
-7. 机械臂接口：按风险类型生成处置动作候选，当前以 no-load 安全响应和 MoveIt/RRT 规划接口为主。
+[Project Report](docs/report/spacemit_k1_edge_ai_robot_report.docx) |
+[Demo Video](demo/demo_clip_20260708_220330.mp4) |
+[Deployment Notes](docs/k1_yolov8n_onnx_deployment_20260702.md) |
+[Model Path](models/risk_vision/) |
+[Submission Index](SUBMISSION.md)
 
-## 目录结构
+</div>
+
+## Overview
+
+This repository contains the open-source competition version of a SpaceMIT K1 MUSE Pi Pro edge AI robot system. The robot is designed for GPS-denied and communication-limited inspection scenes, where perception, mapping, risk reasoning, and report generation should run locally on the edge device.
+
+The current system integrates:
+
+- Remote-controlled 2D mapping with ROS2, lidar, odom, and safety-guarded velocity control.
+- Intel RealSense D435 RGB-D input and local YOLOv8n ONNX inference on K1.
+- Confidence-and-depth gated risk detection for `crack`, `corrosion`, `blockage`, and `leakage`.
+- Risk spatialization from `bbox + depth + odom` to map coordinates.
+- Browser dashboard for YOLO overlay, `infer_fps`, `front_min`, odom, alarm, and risk map.
+- RRT+MoveIt style arm-response planning interface with no-load safety validation.
+- Local LLM CLI report generation for final risk disposal recommendations.
+
+The project focuses on a complete edge-side loop:
 
 ```text
-.
-├── ros2_ws/src/              # ROS2 节点、launch、底盘安全守护、传感器适配
-├── tools/                    # K1 推理、风险落图、dashboard、报告生成、演示脚本
-├── src/                      # 风险协议、机械臂安全校验等通用代码
-├── configs/                  # 风险类别、动作语义、本地 LLM、机械臂安全配置
-├── schemas/                  # 风险点、检测结果、动作候选、episode report JSON schema
-├── rl/                       # 语义动作空间与仿真训练/评估脚本
-├── models/risk_vision/       # 已量化 YOLOv8n ONNX 示例模型与量化报告
-├── maps/                     # 遥控建图与风险地图样例
-├── evidence/                 # 端到端验证记录样例
-├── docs/                     # 设计文档、报告、硬件图片、部署记录
-└── demo/                     # 演示视频占位/样例
+Remote control -> Safety guard -> SLAM map
+D435 RGB-D -> YOLOv8n local inference -> Risk event
+Risk event + depth + odom -> Risk map point
+Risk map point -> Arm action candidate + human disposal task
+Structured risk points -> Local LLM report
 ```
 
-## K1 端快速启动
+## News
+
+- **2026-07-08**: Created the GitHub submission repository with code, report, model, sample maps, evidence, and demo material.
+- **2026-07-07**: Added field-adjusted risk gates using both confidence and depth.
+- **2026-07-06**: Completed preliminary live demo flow: remote mapping, D435 YOLO, risk map, dashboard, and LLM report.
+- **2026-07-03**: Completed K1 D435 YOLO deployment path with SpaceMIT Execution Provider.
+- **2026-06-30**: Completed arm no-load safety response and map-gated action interface.
+
+## Highlights
+
+### Edge AI on K1
+
+The risk vision model runs locally on K1 through ONNX Runtime with SpaceMIT Execution Provider. The demo model is a quantized YOLOv8n ONNX model:
+
+```text
+models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
+```
+
+Field demo observations:
+
+- Risk vision model mAP: **0.949**.
+- D435 live inference with SpaceMIT EP: about **9-11 FPS** in the final demo environment.
+- Example dashboard latency: about **108 ms**.
+- No cloud API is required for risk detection.
+
+### Guarded Mapping
+
+The base command is not sent directly to the chassis. The safety layer receives `/input_cmd_vel`, reads `/scan`, and publishes `/cmd_vel_guarded`.
+
+Small-map demo safety boundary:
+
+```text
+<= 0.10 m: stop
+~ 0.20 m: slow approach
+>= 0.30 m: clear speed limit
+```
+
+Core node:
+
+```text
+ros2_ws/src/k1_sensor_event_adapter/k1_sensor_event_adapter/scan_safety_guard_node.py
+```
+
+### Risk Spatialization
+
+Each accepted detection is converted into a map-level risk point. The system saves evidence frames, risk JSON, risk map images, dashboard status, and final report under the same run directory.
+
+Accepted field gates:
+
+```text
+crack:    confidence >= 0.29, 0.60 m <= depth <= 0.80 m
+blockage: confidence >= 0.23, 0.35 m <= depth <= 0.75 m
+```
+
+Neighbor merging is used so repeated frames do not create duplicated risks for the same physical target.
+
+### Local Report Generation
+
+The LLM report is generated from structured risk points rather than free-form chat. The final report tells the human operator:
+
+- where the risk is located,
+- what category it belongs to,
+- how confident the detection is,
+- what manual disposal action is recommended.
+
+Example disposal mapping:
+
+| Label | Meaning | Disposal action |
+| --- | --- | --- |
+| `crack` | breakage / wall crack | surface cleaning, repair, sealing, recheck |
+| `corrosion` | rust / corrosion | rust removal, anti-corrosion treatment, wall recheck |
+| `blockage` | obstacle / blockage | remove obstacle, clean passage, recheck clearance |
+| `leakage` | leakage / seepage | locate leak, seal, dry, recheck |
+
+## System Pipeline
+
+```mermaid
+flowchart LR
+    A["Keyboard / Remote Control"] --> B["Scan Safety Guard"]
+    B --> C["/cmd_vel_guarded"]
+    C --> D["Tank Base + SLAM"]
+    D --> E["/map + /odom"]
+
+    F["RealSense D435 RGB-D"] --> G["YOLOv8n ONNX on K1"]
+    G --> H["Risk Detection"]
+    H --> I["Depth + Odom Projection"]
+    E --> I
+    I --> J["Risk Map"]
+    J --> K["RRT+MoveIt Arm Candidate"]
+    J --> L["Local LLM Risk Report"]
+    H --> M["Dashboard / Alarm"]
+    J --> M
+```
+
+## Repository Features
+
+- **ROS2 bring-up and mapping**: tank base, lidar, odom, SLAM, map saving.
+- **Safety-guarded control**: front-distance gating for teleop and demo motion.
+- **D435 local perception**: live RGB-D capture, overlay visualization, depth-aware risk gating.
+- **Risk event archive**: overlay frames, raw RGB frames, detection JSON, runtime metrics.
+- **Risk map rendering**: projected risk points with category-level merging.
+- **Dashboard UI**: browser-based K1/Windows visualization through local HTTP server.
+- **Arm response interface**: no-load safety validation and action-space mapping.
+- **Local report generation**: CLI-based LLM reporting with token-rate recording.
+- **RL/RRT-ready planning assets**: semantic action space, primitive registry, training/evaluation scripts.
+
+## Quick Start
+
+### 1. Prepare K1 Environment
 
 ```bash
 cd /home/soc/edge-ai-robot-k1
@@ -37,7 +159,7 @@ source /opt/ros/humble/setup.bash
 source ros2_ws/install/setup.bash
 ```
 
-启动遥控建图与安全守护：
+### 2. Start Guarded Mapping
 
 ```bash
 ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
@@ -50,7 +172,7 @@ ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
   soft_max_linear:=0.10
 ```
 
-启动 D435 YOLO 风险识别和风险落图：
+### 3. Run D435 YOLO Risk Loop
 
 ```bash
 sudo env PYTHONUNBUFFERED=1 python3 tools/run_prelim_remote_mapping_yolo_arm_demo.py \
@@ -63,46 +185,96 @@ sudo env PYTHONUNBUFFERED=1 python3 tools/run_prelim_remote_mapping_yolo_arm_dem
   --output-dir outputs/prelim_remote_mapping_yolo_arm_demo_v1/live_demo
 ```
 
-启动本地 dashboard：
+### 4. Open Dashboard
 
 ```bash
 cd outputs/prelim_remote_mapping_yolo_arm_demo_v1/live_demo
 python3 -m http.server 8765 --bind 0.0.0.0
 ```
 
-浏览器访问：
+Open:
 
 ```text
 http://<K1_IP>:8765/dashboard.html
 http://<K1_IP>:8765/yolo_monitor.html
 ```
 
-## 关键代码入口
+### 5. Finalize Run
 
-- `tools/run_prelim_remote_mapping_yolo_arm_demo.py`：D435 YOLO、深度融合、风险事件、落图、dashboard 状态写出。
-- `ros2_ws/src/k1_sensor_event_adapter/k1_sensor_event_adapter/scan_safety_guard_node.py`：扫描雷达前向距离安全守护。
-- `tools/start_prelim_noarm_ep_k1.sh`：K1 端 SpaceMIT EP 演示启动脚本。
-- `tools/finalize_prelim_demo_k1.sh`：演示结束、地图保存、报告收尾脚本。
-- `tools/run_local_llm_summary.py`：本地 LLM 风险报告生成。
-- `src/arm_safety.py`：机械臂 no-load 与动作安全校验。
-- `rl/train_semantic_ppo.py`、`rl/eval_semantic_policy.py`：仿真策略训练与评估入口。
+```bash
+bash tools/finalize_prelim_demo_k1.sh <run_dir>
+```
 
-## 模型与数据
+The run directory should contain map files, risk frames, risk JSON, dashboard artifacts, risk map images, and the final LLM report.
 
-仓库包含一个已量化的 YOLOv8n ONNX 示例模型：
+## Main Entry Points
+
+| Area | File |
+| --- | --- |
+| Integrated D435 YOLO + risk map demo | `tools/run_prelim_remote_mapping_yolo_arm_demo.py` |
+| K1 SpaceMIT EP launcher | `tools/start_prelim_noarm_ep_k1.sh` |
+| Demo finalization | `tools/finalize_prelim_demo_k1.sh` |
+| Safety guarded control | `ros2_ws/src/k1_sensor_event_adapter/k1_sensor_event_adapter/scan_safety_guard_node.py` |
+| Local LLM report | `tools/run_local_llm_summary.py` |
+| Risk map summary | `tools/run_risk_map_summary.py` |
+| Arm safety | `src/arm_safety.py` |
+| Primitive registry | `configs/primitive_registry.yaml` |
+| RL semantic policy | `rl/train_semantic_ppo.py`, `rl/eval_semantic_policy.py` |
+
+## Model and Data
+
+This open-source repository includes a lightweight deployable model artifact for reproduction:
 
 ```text
 models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 ```
 
-训练数据、原始采集数据和大规模运行输出未纳入 Git 仓库。相关采集、标注、量化与阈值调整流程见：
+Large raw datasets, long videos, ROS bags, and temporary output directories are intentionally excluded. The dataset and model completion path is documented here:
+
+- [Risk vision model completion path](docs/risk_vision_model_completion_path_20260707.md)
+- [K1 YOLOv8n ONNX deployment](docs/k1_yolov8n_onnx_deployment_20260702.md)
+- [XQuant YOLOv8 quantization](docs/k1_xquant_yolov8_truncated_quantization_20260702.md)
+
+## Project Structure
 
 ```text
-docs/risk_vision_model_completion_path_20260707.md
-docs/k1_yolov8n_onnx_deployment_20260702.md
-docs/k1_xquant_yolov8_truncated_quantization_20260702.md
+.
+├── ros2_ws/src/              # ROS2 packages, launch files, safety guard, sensor adapters
+├── tools/                    # K1 demo scripts, YOLO, risk map, dashboard, reports
+├── src/                      # Shared protocol and arm safety code
+├── configs/                  # Risk classes, action semantics, LLM and arm configs
+├── schemas/                  # Risk/detection/action/report JSON schemas
+├── rl/                       # Semantic policy training and evaluation scripts
+├── models/risk_vision/       # Quantized YOLOv8n ONNX demo model and reports
+├── maps/                     # Saved mapping and risk-map examples
+├── evidence/                 # End-to-end evidence snapshots
+├── docs/                     # Design docs, project report, hardware images
+└── demo/                     # Demo video sample or final video link
 ```
 
-## 开源说明
+## Documentation
 
-本仓库按 MIT License 开源。硬件照片、项目报告和演示视频样例放在 `docs/` 与 `demo/` 下，最终提交前可将正式视频链接补入 `SUBMISSION.md`。
+- [Submission index](SUBMISSION.md)
+- [Open-source scope](docs/OPEN_SOURCE_SCOPE.md)
+- [Final project report](docs/report/spacemit_k1_edge_ai_robot_report.docx)
+- [Remote mapping + YOLO + arm demo design](docs/prelim_remote_mapping_yolo_arm_demo_20260703.md)
+- [Full system protocol and logic](docs/k1_full_system_protocol_and_logic_20260630.md)
+- [Local LLM report interface](docs/local_llm_report_interface_20260701.md)
+- [Risk map summary interface](docs/risk_map_summary_interface_20260702.md)
+
+## License
+
+This repository is released under the [MIT License](LICENSE).
+
+## Citation
+
+If this project is useful for your edge AI robotics work, please cite this repository:
+
+```bibtex
+@misc{k1_edge_ai_risk_robot_2026,
+  title  = {K1 Edge AI Risk Inspection Robot},
+  author = {K1 Edge AI Risk Inspection Robot Contributors},
+  year   = {2026},
+  note   = {SpaceMIT K1 MUSE Pi Pro edge AI risk inspection system}
+}
+```
