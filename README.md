@@ -5,11 +5,12 @@
 ### 基于进迭时空 K1 的遥控建图、本地 YOLO 风险识别、风险落图、RRT+MoveIt 响应与本地 LLM 报告
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-blue)
-![SpaceMIT K1](https://img.shields.io/badge/SpaceMIT-K1%20MUSE%20Pi%20Pro-purple)
-![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-SpaceMIT%20EP-orange)
-![YOLOv8n](https://img.shields.io/badge/YOLOv8n-Risk%20Vision-red)
-![Local LLM](https://img.shields.io/badge/LLM-Local%20Inference-black)
+[![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-blue)](https://docs.ros.org/en/humble/)
+[![SpaceMIT K1](https://img.shields.io/badge/SpaceMIT-K1%20MUSE%20Pi%20Pro-purple)](https://www.spacemit.com/)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-SpaceMIT%20EP-orange)](https://onnxruntime.ai/)
+[![SpaceMIT EP](https://img.shields.io/badge/SpaceMIT-Execution%20Provider-orange)](https://bianbu.spacemit.com/)
+[![YOLOv8n](https://img.shields.io/badge/YOLOv8n-Risk%20Vision-red)](https://github.com/ultralytics/ultralytics)
+[![Local LLM](https://img.shields.io/badge/LLM-Local%20Inference-black)](https://github.com/ggml-org/llama.cpp)
 
 [项目报告](docs/report/spacemit_k1_edge_ai_robot_report.docx) |
 [演示视频](demo/demo_clip_20260708_220330.mp4) |
