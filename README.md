@@ -14,6 +14,7 @@
 
 [项目报告](docs/report/spacemit_k1_edge_ai_robot_report.docx) |
 [演示视频](demo/demo_clip_20260708_220330.mp4) |
+[自主建图录屏](demo/recordings/) |
 [部署说明](docs/k1_yolov8n_onnx_deployment_20260702.md) |
 [模型目录](models/risk_vision/) |
 [提交材料索引](SUBMISSION.md)
@@ -27,6 +28,7 @@
 当前系统已经集成：
 
 - 基于 ROS2、雷达、里程计和安全守护的遥控二维建图。
+- Ubuntu ROS2 Humble + Gazebo + RViz 下的 SLAM-Frontier/RRT/Nav2 自主建图仿真。
 - Intel RealSense D435 RGB-D 输入和 K1 本地 YOLOv8n ONNX 推理。
 - 面向 `crack`、`corrosion`、`blockage`、`leakage` 的风险识别。
 - 结合 confidence 与 depth 的自动报警和落图门限。
@@ -52,6 +54,7 @@ RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地
 
 ## 更新记录
 
+- **2026-07-11**：完成 Ubuntu Humble 仿真自主建图录屏基线：Gazebo 履带底盘、N10P 雷达、D435、`slam_toolbox`、RRT frontier、Nav2、安全守护和 RViz 轨迹显示。
 - **2026-07-08**：整理 GitHub 开源提交仓库，补充代码、报告、模型、样例地图、evidence 和演示材料。
 - **2026-07-07**：根据实机场景完成 confidence + depth 联合门限调整。
 - **2026-07-06**：完成演示链路：SLAM-Frontier 自主探测、D435 YOLO、风险地图、dashboard 和 LLM 报告。
@@ -67,6 +70,25 @@ RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地
 ```text
 models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 ```
+
+### SLAM-Frontier 自主建图仿真
+
+7 月 11 日完成的 Ubuntu 仿真链路用于展示自主探图能力：
+
+```text
+Gazebo tracked base + N10P lidar + D435-style camera
+-> slam_toolbox occupancy grid
+-> RRT frontier selection
+-> Nav2 path following
+-> scan safety guard
+-> RViz map / laser / trajectory visualization
+```
+
+对应材料：
+
+- 进度记录：`docs/autonomous_mapping_progress_20260711.md`
+- 仿真包：`sim/tracked_robot_description/`
+- 录屏：`demo/recordings/`
 
 现场记录指标：
 

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<robot name="tracked_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find tracked_robot_description)/urdf/common_inertials.xacro"/>
+  <xacro:include filename="$(find tracked_robot_description)/urdf/materials.xacro"/>
+  <xacro:include filename="$(find tracked_robot_description)/urdf/chassis.xacro"/>
+  <xacro:include filename="$(find tracked_robot_description)/urdf/sensors.xacro"/>
+  <xacro:include filename="$(find tracked_robot_description)/urdf/gazebo_plugins.xacro"/>
+
+  <link name="base_footprint"/>
+
+  <xacro:tracked_chassis parent="base_footprint"/>
+  <xacro:sensor_stack parent="chassis_link"/>
+  <xacro:gazebo_extensions/>
+</robot>

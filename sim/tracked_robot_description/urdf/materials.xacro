@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <material name="mat_chassis">
+    <color rgba="0.45 0.30 0.82 1.0"/>
+  </material>
+
+  <material name="mat_track">
+    <color rgba="0.02 0.02 0.02 1.0"/>
+  </material>
+
+  <material name="mat_sensor">
+    <color rgba="0.05 0.05 0.06 1.0"/>
+  </material>
+
+  <material name="mat_arm">
+    <color rgba="0.04 0.04 0.05 1.0"/>
+  </material>
+
+  <material name="mat_tool">
+    <color rgba="0.55 0.58 0.60 1.0"/>
+  </material>
+
+  <material name="mat_servo_purple">
+    <color rgba="0.42 0.29 0.86 1.0"/>
+  </material>
+
+  <material name="mat_gripper_cyan">
+    <color rgba="0.28 0.78 0.86 1.0"/>
+  </material>
+
+  <material name="mat_metal">
+    <color rgba="0.72 0.72 0.68 1.0"/>
+  </material>
+</robot>

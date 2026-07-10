@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="tracked_robot_world">
+    <physics name="default_physics" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.82 0.82 0.78 1</diffuse>
+      <specular>0.18 0.18 0.18 1</specular>
+      <direction>-0.35 0.15 -0.92</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>16 16</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>16 16</size></plane></geometry>
+          <material><diffuse>0.80 0.80 0.76 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Outer boundary: 8 m x 8 m, with several narrow interior passages. -->
+    <model name="outer_north"><static>true</static><pose>0 4 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>8.0 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>8.0 0.08 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+    <model name="outer_south"><static>true</static><pose>0 -4 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>8.0 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>8.0 0.08 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+    <model name="outer_east"><static>true</static><pose>4 0 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 8.0 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 8.0 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+    <model name="outer_west"><static>true</static><pose>-4 0 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 8.0 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 8.0 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+
+    <!-- Zig-zag corridors and cul-de-sacs. -->
+    <model name="wall_west_upper"><static>true</static><pose>-2.65 2.05 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 2.35 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 2.35 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_west_lower"><static>true</static><pose>-2.65 -2.0 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 1.95 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 1.95 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_mid_left"><static>true</static><pose>-1.35 0.85 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 2.5 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 2.5 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_mid_right"><static>true</static><pose>0.55 -0.7 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 2.7 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 2.7 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_east_upper"><static>true</static><pose>2.35 1.75 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 2.2 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 2.2 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_east_lower"><static>true</static><pose>2.35 -2.05 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 1.85 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 1.85 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+
+    <model name="wall_nw_hall"><static>true</static><pose>-1.75 2.85 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>1.75 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.75 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_north_mid"><static>true</static><pose>0.65 2.25 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.25 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.25 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_center"><static>true</static><pose>-0.45 0.15 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>1.8 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.8 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_south_mid"><static>true</static><pose>-0.35 -2.1 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.45 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.45 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="wall_se_hall"><static>true</static><pose>1.55 -3.05 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.1 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.1 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+
+    <!-- Landmarks make the map visibly richer and help judge scan alignment. -->
+    <model name="pillar_red"><static>true</static><pose>-3.2 3.25 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.16</radius><length>0.5</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.16</radius><length>0.5</length></cylinder></geometry><material><diffuse>0.63 0.22 0.18 1</diffuse></material></visual></link></model>
+    <model name="pillar_green"><static>true</static><pose>3.2 -3.15 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.18</radius><length>0.5</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.18</radius><length>0.5</length></cylinder></geometry><material><diffuse>0.24 0.50 0.38 1</diffuse></material></visual></link></model>
+    <model name="box_blue"><static>true</static><pose>1.45 0.9 0.22 0 0 0.35</pose><link name="link"><collision name="collision"><geometry><box><size>0.38 0.28 0.44</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.38 0.28 0.44</size></box></geometry><material><diffuse>0.22 0.38 0.58 1</diffuse></material></visual></link></model>
+    <model name="box_orange"><static>true</static><pose>-1.95 -2.95 0.20 0 0 -0.45</pose><link name="link"><collision name="collision"><geometry><box><size>0.42 0.32 0.40</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.42 0.32 0.40</size></box></geometry><material><diffuse>0.68 0.38 0.20 1</diffuse></material></visual></link></model>
+  </world>
+</sdf>

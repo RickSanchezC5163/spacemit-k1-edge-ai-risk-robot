@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780">
+  <defs>
+    <style>
+      .bg { fill: #f6f7f8; }
+      .panel { fill: #ffffff; stroke: #c7cdd3; stroke-width: 2; }
+      .chassis { fill: #8f63d8; stroke: #3e2d66; stroke-width: 3; }
+      .track { fill: #202326; stroke: #050606; stroke-width: 2; }
+      .sensor { fill: #22272b; stroke: #0b0d0f; stroke-width: 2; }
+      .camera { fill: #2f7dc0; stroke: #0f3458; stroke-width: 2; }
+      .arm { fill: #2b2d31; stroke: #101114; stroke-width: 3; }
+      .joint { fill: #f2994a; stroke: #7a3d08; stroke-width: 2; }
+      .gripper { fill: #93c5fd; stroke: #1d4f91; stroke-width: 2; }
+      .dim { stroke: #5b6570; stroke-width: 2; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .guide { stroke: #a3abb4; stroke-width: 1.5; stroke-dasharray: 7 6; }
+      .axis { stroke: #d14343; stroke-width: 2.5; marker-end: url(#arrow-red); }
+      .text { fill: #1f2933; font-family: Arial, "Microsoft YaHei", sans-serif; font-size: 22px; }
+      .small { fill: #34404b; font-family: Arial, "Microsoft YaHei", sans-serif; font-size: 17px; }
+      .tiny { fill: #4b5563; font-family: Arial, "Microsoft YaHei", sans-serif; font-size: 14px; }
+      .title { fill: #111827; font-family: Arial, "Microsoft YaHei", sans-serif; font-size: 28px; font-weight: 700; }
+      .note { fill: #6b7280; font-family: Arial, "Microsoft YaHei", sans-serif; font-size: 15px; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6570"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d14343"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="780"/>
+  <text class="title" x="60" y="55">Tracked robot schematic from current Gazebo dimensions</text>
+  <text class="note" x="60" y="84">Scale is schematic, not a manufacturing drawing. Front is +X.</text>
+
+  <rect class="panel" x="55" y="115" width="520" height="585" rx="8"/>
+  <text class="title" x="85" y="155">Top view</text>
+  <text class="small" x="85" y="183">Chassis: 27 cm x 27 cm</text>
+
+  <!-- Top view: 10 px = 1 cm. Chassis 270 x 270 px. -->
+  <g transform="translate(180 245)">
+    <rect class="track" x="0" y="0" width="270" height="40" rx="8"/>
+    <rect class="track" x="0" y="230" width="270" height="40" rx="8"/>
+    <rect class="chassis" x="0" y="0" width="270" height="270" rx="10"/>
+
+    <line class="guide" x1="135" y1="-35" x2="135" y2="305"/>
+    <line class="guide" x1="-35" y1="135" x2="305" y2="135"/>
+    <text class="tiny" x="145" y="-14">centerline</text>
+
+    <circle class="camera" cx="240" cy="135" r="15"/>
+    <text class="tiny" x="207" y="121">D435</text>
+    <text class="tiny" x="206" y="306">3 cm behind front</text>
+
+    <circle class="sensor" cx="210" cy="135" r="20"/>
+    <text class="tiny" x="184" y="167">N10P</text>
+    <text class="tiny" x="166" y="326">6 cm behind front</text>
+
+    <circle class="joint" cx="130" cy="135" r="22"/>
+    <text class="tiny" x="103" y="126">ID1</text>
+    <text class="tiny" x="78" y="326">14 cm behind front</text>
+
+    <line class="arm" x1="130" y1="135" x2="330" y2="135"/>
+    <path class="gripper" d="M330 135 L385 108 L385 126 L350 135 L385 144 L385 162 Z"/>
+    <text class="tiny" x="240" y="124">arm projects forward</text>
+
+    <circle class="joint" cx="240" cy="20" r="18"/>
+    <circle class="joint" cx="240" cy="250" r="18"/>
+    <text class="tiny" x="258" y="23">raised drive sprockets</text>
+
+    <line class="axis" x1="135" y1="135" x2="315" y2="135"/>
+    <text class="small" x="318" y="141">+X front</text>
+    <line class="axis" x1="135" y1="135" x2="135" y2="-60"/>
+    <text class="small" x="145" y="-55">+Y left</text>
+
+    <line class="dim" x1="0" y1="-28" x2="270" y2="-28"/>
+    <text class="small" x="92" y="-43">27 cm</text>
+    <line class="dim" x1="-28" y1="0" x2="-28" y2="270"/>
+    <text class="small" x="-82" y="143" transform="rotate(-90 -82 143)">27 cm</text>
+  </g>
+
+  <rect class="panel" x="625" y="115" width="520" height="585" rx="8"/>
+  <text class="title" x="655" y="155">Side view</text>
+  <text class="small" x="655" y="183">Arm chain follows the reference photo</text>
+
+  <!-- Side view ground reference. x scale 10 px/cm, z scale 12 px/cm. -->
+  <g transform="translate(720 590)">
+    <line class="guide" x1="-40" y1="0" x2="360" y2="0"/>
+    <text class="small" x="-36" y="25">ground</text>
+
+    <!-- Chassis: 27 cm long, top 10 cm, 3 cm thick. -->
+    <rect class="chassis" x="0" y="-120" width="270" height="36" rx="8"/>
+    <text class="small" x="82" y="-96">chassis top 10 cm</text>
+
+    <rect class="track" x="0" y="-96" width="270" height="96" rx="9"/>
+    <text class="tiny" x="78" y="-45">track height 8 cm</text>
+
+    <circle class="joint" cx="240" cy="-78" r="24"/>
+    <text class="tiny" x="208" y="-108">drive wheel 4 cm, suspended</text>
+
+    <circle class="joint" cx="45" cy="-24" r="24"/>
+    <circle class="joint" cx="105" cy="-24" r="24"/>
+    <circle class="joint" cx="165" cy="-24" r="24"/>
+    <circle class="joint" cx="225" cy="-24" r="24"/>
+    <text class="tiny" x="62" y="18">4 lower road wheels with suspension</text>
+
+    <!-- Front edge at x=270. D435: 3 cm behind front, z=11 cm. Lidar: 6 cm behind front, z=13 cm. Arm: 14 cm behind front, z=13 cm. -->
+    <circle class="camera" cx="240" cy="-132" r="12"/>
+    <text class="small" x="252" y="-136">D435 z=11cm</text>
+
+    <circle class="sensor" cx="210" cy="-156" r="16"/>
+    <text class="small" x="230" y="-158">N10P z=13cm</text>
+
+    <circle class="joint" cx="130" cy="-156" r="16"/>
+    <text class="small" x="98" y="-169">ID1</text>
+
+    <line class="arm" x1="130" y1="-156" x2="130" y2="-384"/>
+    <circle class="joint" cx="130" cy="-384" r="15"/>
+    <text class="small" x="96" y="-390">ID2</text>
+    <text class="tiny" x="140" y="-270">ID1-ID2 19 cm</text>
+
+    <line class="arm" x1="130" y1="-384" x2="170" y2="-384"/>
+    <circle class="joint" cx="170" cy="-384" r="15"/>
+    <text class="small" x="178" y="-390">ID3</text>
+    <text class="tiny" x="128" y="-408">4 cm</text>
+
+    <line class="arm" x1="170" y1="-372" x2="360" y2="-372"/>
+    <line class="arm" x1="170" y1="-396" x2="360" y2="-396"/>
+    <circle class="joint" cx="360" cy="-384" r="15"/>
+    <text class="small" x="368" y="-390">ID4</text>
+    <text class="tiny" x="238" y="-410">ID3-ID4 19 cm dual tubes</text>
+
+    <line class="arm" x1="360" y1="-384" x2="410" y2="-384"/>
+    <path class="gripper" d="M410 -384 L455 -413 L460 -400 L428 -384 L460 -368 L455 -355 Z"/>
+    <circle class="joint" cx="410" cy="-384" r="12"/>
+    <text class="small" x="382" y="-425">ID5 gripper</text>
+
+    <line class="dim" x1="0" y1="-138" x2="270" y2="-138"/>
+    <text class="small" x="96" y="-150">27 cm</text>
+
+    <line class="dim" x1="305" y1="0" x2="305" y2="-120"/>
+    <text class="small" x="315" y="-58">10 cm top</text>
+
+    <line class="dim" x1="330" y1="0" x2="330" y2="-156"/>
+    <text class="small" x="340" y="-76">13 cm sensors / ID1</text>
+
+    <line class="axis" x1="20" y1="-20" x2="330" y2="-20"/>
+    <text class="small" x="334" y="-14">+X front</text>
+    <line class="axis" x1="20" y1="-20" x2="20" y2="-200"/>
+    <text class="small" x="30" y="-202">+Z up</text>
+  </g>
+
+  <text class="note" x="60" y="735">Visible drive wheel is suspended; Gazebo drive uses a hidden equivalent track wheel for stable skid-steer motion.</text>
+</svg>

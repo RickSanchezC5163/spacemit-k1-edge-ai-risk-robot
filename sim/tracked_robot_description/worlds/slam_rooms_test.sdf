@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="tracked_robot_world">
+    <physics name="default_physics" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.82 0.82 0.80 1</diffuse>
+      <specular>0.18 0.18 0.18 1</specular>
+      <direction>-0.45 0.20 -0.88</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>14 14</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>14 14</size></plane></geometry>
+          <material><diffuse>0.80 0.80 0.76 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Outer boundary: 7 m x 7 m. -->
+    <model name="outer_north"><static>true</static><pose>0 3.5 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>7.0 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>7.0 0.08 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+    <model name="outer_south"><static>true</static><pose>0 -3.5 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>7.0 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>7.0 0.08 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+    <model name="outer_east"><static>true</static><pose>3.5 0 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 7.0 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 7.0 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+    <model name="outer_west"><static>true</static><pose>-3.5 0 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 7.0 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 7.0 0.5</size></box></geometry><material><diffuse>0.42 0.44 0.48 1</diffuse></material></visual></link></model>
+
+    <!-- Open room dividers: short half-walls leave continuous reachable space for RRT/Nav2. -->
+    <model name="divider_left_north"><static>true</static><pose>-1.55 2.62 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 1.25 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 1.25 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="divider_left_south"><static>true</static><pose>-1.55 -2.65 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 1.15 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 1.15 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="divider_right_north"><static>true</static><pose>1.55 2.65 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 1.15 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 1.15 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="divider_right_south"><static>true</static><pose>1.55 -2.62 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.08 1.25 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.08 1.25 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="north_left_partition"><static>true</static><pose>-2.62 1.05 0.25 0 0 0.22</pose><link name="link"><collision name="collision"><geometry><box><size>0.95 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.95 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="north_right_partition"><static>true</static><pose>2.62 1.05 0.25 0 0 -0.22</pose><link name="link"><collision name="collision"><geometry><box><size>0.95 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.95 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+    <model name="south_mid_partition"><static>true</static><pose>0 -1.85 0.25 0 0 0.35</pose><link name="link"><collision name="collision"><geometry><box><size>0.85 0.08 0.5</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.85 0.08 0.5</size></box></geometry><material><diffuse>0.25 0.31 0.39 1</diffuse></material></visual></link></model>
+
+    <!-- Island obstacles and asymmetric landmarks. -->
+    <model name="center_pillar"><static>true</static><pose>0.0 0.15 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.22</radius><length>0.5</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.22</radius><length>0.5</length></cylinder></geometry><material><diffuse>0.62 0.24 0.20 1</diffuse></material></visual></link></model>
+    <model name="north_box"><static>true</static><pose>2.35 2.15 0.22 0 0 0.4</pose><link name="link"><collision name="collision"><geometry><box><size>0.55 0.30 0.44</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.55 0.30 0.44</size></box></geometry><material><diffuse>0.20 0.38 0.58 1</diffuse></material></visual></link></model>
+    <model name="south_box"><static>true</static><pose>-2.0 -2.15 0.20 0 0 -0.5</pose><link name="link"><collision name="collision"><geometry><box><size>0.45 0.35 0.40</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.45 0.35 0.40</size></box></geometry><material><diffuse>0.66 0.38 0.20 1</diffuse></material></visual></link></model>
+    <model name="east_cylinder"><static>true</static><pose>2.65 -0.55 0.25 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.16</radius><length>0.5</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.16</radius><length>0.5</length></cylinder></geometry><material><diffuse>0.26 0.52 0.42 1</diffuse></material></visual></link></model>
+  </world>
+</sdf>

@@ -1,0 +1,343 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="chassis_length" value="0.27"/>
+  <xacro:property name="chassis_width" value="0.27"/>
+  <xacro:property name="chassis_height" value="0.03"/>
+  <xacro:property name="chassis_mass" value="2.5"/>
+  <xacro:property name="chassis_top_z" value="0.10"/>
+  <xacro:property name="chassis_center_z" value="${chassis_top_z - chassis_height / 2.0}"/>
+
+  <xacro:property name="track_length" value="0.27"/>
+  <xacro:property name="track_width" value="0.04"/>
+  <xacro:property name="track_height" value="0.08"/>
+  <xacro:property name="track_mass" value="0.8"/>
+  <xacro:property name="track_center_distance" value="0.23"/>
+  <xacro:property name="track_y" value="${track_center_distance / 2.0}"/>
+  <xacro:property name="track_z" value="${track_height / 2.0 - chassis_center_z}"/>
+
+  <xacro:property name="drive_sprocket_radius" value="0.02"/>
+  <xacro:property name="drive_sprocket_width" value="0.04"/>
+  <xacro:property name="drive_sprocket_mass" value="0.18"/>
+  <xacro:property name="drive_sprocket_x" value="${chassis_length / 2.0 - 0.03}"/>
+  <xacro:property name="rear_idler_x" value="${-chassis_length / 2.0 + 0.03}"/>
+  <xacro:property name="drive_sprocket_z_abs" value="0.065"/>
+  <xacro:property name="drive_sprocket_z" value="${drive_sprocket_z_abs - chassis_center_z}"/>
+
+  <xacro:property name="road_wheel_radius" value="0.02"/>
+  <xacro:property name="road_wheel_width" value="0.035"/>
+  <xacro:property name="road_wheel_mass" value="0.10"/>
+  <xacro:property name="road_wheel_z" value="${road_wheel_radius - chassis_center_z}"/>
+  <xacro:property name="suspension_strut_z" value="${0.055 - chassis_center_z}"/>
+
+  <xacro:property name="virtual_drive_radius" value="${track_height / 2.0}"/>
+  <xacro:property name="virtual_drive_width" value="${track_width}"/>
+  <xacro:property name="virtual_drive_mass" value="0.05"/>
+  <xacro:property name="virtual_drive_z" value="${virtual_drive_radius - chassis_center_z}"/>
+
+  <xacro:macro name="visible_wheel" params="name radius width mass">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi / 2.0} 0 0"/>
+        <geometry>
+          <cylinder radius="${radius}" length="${width}"/>
+        </geometry>
+        <material name="mat_track"/>
+      </visual>
+      <xacro:cylinder_inertial_y mass="${mass}" radius="${radius}" length="${width}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:cylinder_inertial_y>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="passive_road_wheel" params="name">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi / 2.0} 0 0"/>
+        <geometry>
+          <cylinder radius="${road_wheel_radius}" length="${road_wheel_width}"/>
+        </geometry>
+        <material name="mat_track"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi / 2.0} 0 0"/>
+        <geometry>
+          <cylinder radius="${road_wheel_radius}" length="${road_wheel_width}"/>
+        </geometry>
+      </collision>
+      <xacro:cylinder_inertial_y mass="${road_wheel_mass}" radius="${road_wheel_radius}" length="${road_wheel_width}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:cylinder_inertial_y>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="virtual_drive_wheel" params="name">
+    <link name="${name}">
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi / 2.0} 0 0"/>
+        <geometry>
+          <cylinder radius="${virtual_drive_radius}" length="${virtual_drive_width}"/>
+        </geometry>
+      </collision>
+      <xacro:cylinder_inertial_y mass="${virtual_drive_mass}" radius="${virtual_drive_radius}" length="${virtual_drive_width}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:cylinder_inertial_y>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="suspension_strut_group" params="name side_y">
+    <link name="${name}">
+      <visual>
+        <origin xyz="-0.09 ${side_y} ${suspension_strut_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.012 0.010 0.035"/>
+        </geometry>
+        <material name="mat_tool"/>
+      </visual>
+      <visual>
+        <origin xyz="-0.03 ${side_y} ${suspension_strut_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.012 0.010 0.035"/>
+        </geometry>
+        <material name="mat_tool"/>
+      </visual>
+      <visual>
+        <origin xyz="0.03 ${side_y} ${suspension_strut_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.012 0.010 0.035"/>
+        </geometry>
+        <material name="mat_tool"/>
+      </visual>
+      <visual>
+        <origin xyz="0.09 ${side_y} ${suspension_strut_z}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.012 0.010 0.035"/>
+        </geometry>
+        <material name="mat_tool"/>
+      </visual>
+      <xacro:box_inertial mass="0.08" x="0.20" y="0.01" z="0.035">
+        <origin xyz="0 ${side_y} ${suspension_strut_z}" rpy="0 0 0"/>
+      </xacro:box_inertial>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="tracked_chassis" params="parent">
+    <link name="chassis_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        </geometry>
+        <material name="mat_chassis"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+        </geometry>
+      </collision>
+      <xacro:box_inertial mass="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="${chassis_height}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:box_inertial>
+    </link>
+
+    <joint name="base_footprint_to_chassis_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="chassis_link"/>
+      <origin xyz="0 0 ${chassis_center_z}" rpy="0 0 0"/>
+    </joint>
+
+    <link name="left_track_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${track_length} ${track_width} ${track_height}"/>
+        </geometry>
+        <material name="mat_track"/>
+      </visual>
+      <xacro:box_inertial mass="${track_mass}" x="${track_length}" y="${track_width}" z="${track_height}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:box_inertial>
+    </link>
+
+    <joint name="left_track_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="left_track_link"/>
+      <origin xyz="0 ${track_y} ${track_z}" rpy="0 0 0"/>
+    </joint>
+
+    <link name="right_track_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${track_length} ${track_width} ${track_height}"/>
+        </geometry>
+        <material name="mat_track"/>
+      </visual>
+      <xacro:box_inertial mass="${track_mass}" x="${track_length}" y="${track_width}" z="${track_height}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:box_inertial>
+    </link>
+
+    <joint name="right_track_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="right_track_link"/>
+      <origin xyz="0 ${-track_y} ${track_z}" rpy="0 0 0"/>
+    </joint>
+
+    <xacro:suspension_strut_group name="left_suspension_struts_link" side_y="${track_y}"/>
+    <joint name="left_suspension_struts_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="left_suspension_struts_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <xacro:suspension_strut_group name="right_suspension_struts_link" side_y="${-track_y}"/>
+    <joint name="right_suspension_struts_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="right_suspension_struts_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <xacro:visible_wheel
+      name="left_drive_sprocket_link"
+      radius="${drive_sprocket_radius}"
+      width="${drive_sprocket_width}"
+      mass="${drive_sprocket_mass}"/>
+
+    <joint name="left_drive_sprocket_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="left_drive_sprocket_link"/>
+      <origin xyz="${drive_sprocket_x} ${track_y} ${drive_sprocket_z}" rpy="0 0 0"/>
+    </joint>
+
+    <xacro:visible_wheel
+      name="left_rear_idler_link"
+      radius="${drive_sprocket_radius}"
+      width="${drive_sprocket_width}"
+      mass="${drive_sprocket_mass}"/>
+
+    <joint name="left_rear_idler_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="left_rear_idler_link"/>
+      <origin xyz="${rear_idler_x} ${track_y} ${drive_sprocket_z}" rpy="0 0 0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="left_road_wheel_1_link"/>
+    <joint name="left_road_wheel_1_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="left_road_wheel_1_link"/>
+      <origin xyz="-0.09 ${track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="left_road_wheel_2_link"/>
+    <joint name="left_road_wheel_2_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="left_road_wheel_2_link"/>
+      <origin xyz="-0.03 ${track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="left_road_wheel_3_link"/>
+    <joint name="left_road_wheel_3_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="left_road_wheel_3_link"/>
+      <origin xyz="0.03 ${track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="left_road_wheel_4_link"/>
+    <joint name="left_road_wheel_4_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="left_road_wheel_4_link"/>
+      <origin xyz="0.09 ${track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:virtual_drive_wheel name="left_virtual_drive_wheel_link"/>
+
+    <joint name="left_track_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="left_virtual_drive_wheel_link"/>
+      <origin xyz="0 ${track_y} ${virtual_drive_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="40.0" velocity="30.0"/>
+      <dynamics damping="0.2" friction="0.1"/>
+    </joint>
+
+    <xacro:visible_wheel
+      name="right_drive_sprocket_link"
+      radius="${drive_sprocket_radius}"
+      width="${drive_sprocket_width}"
+      mass="${drive_sprocket_mass}"/>
+
+    <joint name="right_drive_sprocket_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="right_drive_sprocket_link"/>
+      <origin xyz="${drive_sprocket_x} ${-track_y} ${drive_sprocket_z}" rpy="0 0 0"/>
+    </joint>
+
+    <xacro:visible_wheel
+      name="right_rear_idler_link"
+      radius="${drive_sprocket_radius}"
+      width="${drive_sprocket_width}"
+      mass="${drive_sprocket_mass}"/>
+
+    <joint name="right_rear_idler_fixed_joint" type="fixed">
+      <parent link="chassis_link"/>
+      <child link="right_rear_idler_link"/>
+      <origin xyz="${rear_idler_x} ${-track_y} ${drive_sprocket_z}" rpy="0 0 0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="right_road_wheel_1_link"/>
+    <joint name="right_road_wheel_1_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="right_road_wheel_1_link"/>
+      <origin xyz="-0.09 ${-track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="right_road_wheel_2_link"/>
+    <joint name="right_road_wheel_2_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="right_road_wheel_2_link"/>
+      <origin xyz="-0.03 ${-track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="right_road_wheel_3_link"/>
+    <joint name="right_road_wheel_3_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="right_road_wheel_3_link"/>
+      <origin xyz="0.03 ${-track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:passive_road_wheel name="right_road_wheel_4_link"/>
+    <joint name="right_road_wheel_4_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="right_road_wheel_4_link"/>
+      <origin xyz="0.09 ${-track_y} ${road_wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+    </joint>
+
+    <xacro:virtual_drive_wheel name="right_virtual_drive_wheel_link"/>
+
+    <joint name="right_track_joint" type="continuous">
+      <parent link="chassis_link"/>
+      <child link="right_virtual_drive_wheel_link"/>
+      <origin xyz="0 ${-track_y} ${virtual_drive_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="40.0" velocity="30.0"/>
+      <dynamics damping="0.2" friction="0.1"/>
+    </joint>
+  </xacro:macro>
+</robot>

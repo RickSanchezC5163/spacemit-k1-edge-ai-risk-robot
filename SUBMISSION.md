@@ -19,10 +19,32 @@ https://github.com/<your-account>/spacemit-k1-edge-ai-risk-robot
 | 风险点地图化 | `tools/project_risk_point_to_map.py`、`tools/run_risk_map_summary.py` |
 | 本地 LLM 报告 | `tools/run_local_llm_summary.py`、`configs/local_llm_config.yaml` |
 | 机械臂安全响应 | `src/arm_safety.py`、`configs/arm_safety_config.json` |
-| RRT/MoveIt/RL 验证接口 | `rl/`、`configs/rl_action_space.yaml`、`configs/primitive_registry.yaml` |
+| RRT/MoveIt/RL 验证接口 | `sim/tracked_robot_description/`、`tools/gz_sync_model_pose_from_odom.py`、`tools/ros2_twist_relay.py`、`rl/`、`configs/rl_action_space.yaml`、`configs/primitive_registry.yaml` |
 | 项目报告 | `docs/report/spacemit_k1_edge_ai_robot_report.docx` |
 | 设计文件/硬件图片 | `docs/hardware/`、`firmware/` |
-| 演示视频 | `demo/` 或最终网盘/GitHub Release 链接 |
+| 演示视频 | `demo/demo_clip_20260708_220330.mp4`、`demo/recordings/` 或最终网盘/GitHub Release 链接 |
+
+## 2026-07-11 自主建图补充材料
+
+Ubuntu ROS2 Humble 仿真链路已经跑通：
+
+```text
+Gazebo 履带底盘 + N10P 雷达 + D435
+-> slam_toolbox 建图
+-> RRT frontier 选点
+-> Nav2 导航
+-> 雷达安全守护
+-> RViz 地图/点云/轨迹显示
+```
+
+材料位置：
+
+- 进度说明：`docs/autonomous_mapping_progress_20260711.md`
+- 仿真包：`sim/tracked_robot_description/`
+- 录屏文件：
+  - `demo/recordings/录屏 2026年07月11日 00时59分50秒.webm`
+  - `demo/recordings/录屏 2026年07月11日 01时19分55秒.webm`
+  - `demo/recordings/录屏 2026年07月11日 01时42分10秒.webm`
 
 ## 建议提交邮件内容
 

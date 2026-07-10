@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="d435_x" value="${chassis_length / 2.0 - 0.055}"/>
+  <xacro:property name="d435_z_abs" value="0.11"/>
+  <xacro:property name="lidar_x" value="${chassis_length / 2.0 - 0.065}"/>
+  <xacro:property name="lidar_z_abs" value="0.13"/>
+
+  <xacro:macro name="sensor_stack" params="parent">
+    <link name="lidar_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.045" length="0.055"/>
+        </geometry>
+        <material name="mat_sensor"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.045" length="0.055"/>
+        </geometry>
+      </collision>
+      <xacro:cylinder_inertial_z mass="0.18" radius="0.045" length="0.055">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:cylinder_inertial_z>
+    </link>
+
+    <joint name="lidar_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="lidar_link"/>
+      <origin xyz="${lidar_x} 0 ${lidar_z_abs - chassis_center_z}" rpy="0 0 0"/>
+    </joint>
+
+    <link name="d435_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.09 0.025 0.025"/>
+        </geometry>
+        <material name="mat_sensor"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.09 0.025 0.025"/>
+        </geometry>
+      </collision>
+      <xacro:box_inertial mass="0.08" x="0.09" y="0.025" z="0.025">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:box_inertial>
+    </link>
+
+    <joint name="d435_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="d435_link"/>
+      <origin xyz="${d435_x} 0 ${d435_z_abs - chassis_center_z}" rpy="0 0 0"/>
+    </joint>
+
+    <link name="d435_color_optical_frame"/>
+    <joint name="d435_color_optical_joint" type="fixed">
+      <parent link="d435_link"/>
+      <child link="d435_color_optical_frame"/>
+      <origin xyz="0 0 0" rpy="${-pi / 2.0} 0 ${-pi / 2.0}"/>
+    </joint>
+
+    <link name="d435_depth_optical_frame"/>
+    <joint name="d435_depth_optical_joint" type="fixed">
+      <parent link="d435_link"/>
+      <child link="d435_depth_optical_frame"/>
+      <origin xyz="0 0 0" rpy="${-pi / 2.0} 0 ${-pi / 2.0}"/>
+    </joint>
+  </xacro:macro>
+</robot>

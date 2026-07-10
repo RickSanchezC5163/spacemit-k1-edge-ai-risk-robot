@@ -1,0 +1,110 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="gazebo_extensions">
+    <gazebo reference="left_virtual_drive_wheel_link">
+      <mu1>1.2</mu1>
+      <mu2>1.2</mu2>
+    </gazebo>
+
+    <gazebo reference="right_virtual_drive_wheel_link">
+      <mu1>1.2</mu1>
+      <mu2>1.2</mu2>
+    </gazebo>
+
+    <gazebo reference="left_road_wheel_1_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+    <gazebo reference="left_road_wheel_2_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+    <gazebo reference="left_road_wheel_3_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+    <gazebo reference="left_road_wheel_4_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+    <gazebo reference="right_road_wheel_1_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+    <gazebo reference="right_road_wheel_2_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+    <gazebo reference="right_road_wheel_3_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+    <gazebo reference="right_road_wheel_4_link"><mu1>0.8</mu1><mu2>0.8</mu2></gazebo>
+
+    <gazebo>
+      <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+        <left_joint>left_track_joint</left_joint>
+        <right_joint>right_track_joint</right_joint>
+        <wheel_separation>0.23</wheel_separation>
+        <wheel_radius>0.04</wheel_radius>
+        <odom_publish_frequency>50</odom_publish_frequency>
+        <topic>/cmd_vel_guarded</topic>
+        <odom_topic>/odom</odom_topic>
+        <tf_topic>/tf</tf_topic>
+        <frame_id>odom</frame_id>
+        <child_frame_id>base_footprint</child_frame_id>
+      </plugin>
+    </gazebo>
+
+    <gazebo reference="lidar_link">
+      <sensor name="front_lidar" type="gpu_lidar">
+        <ignition_frame_id>lidar_link</ignition_frame_id>
+        <always_on>1</always_on>
+        <visualize>true</visualize>
+        <update_rate>10</update_rate>
+        <topic>/scan</topic>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>720</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159</min_angle>
+              <max_angle>3.14159</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.18</min>
+            <max>12.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </ray>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="d435_link">
+      <sensor name="d435_color" type="camera">
+        <ignition_frame_id>d435_color_optical_frame</ignition_frame_id>
+        <always_on>1</always_on>
+        <visualize>true</visualize>
+        <update_rate>30</update_rate>
+        <topic>/camera/color/image_raw</topic>
+        <camera name="color">
+          <horizontal_fov>1.211</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>20.0</far>
+          </clip>
+        </camera>
+      </sensor>
+
+      <sensor name="d435_depth" type="depth_camera">
+        <ignition_frame_id>d435_depth_optical_frame</ignition_frame_id>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+        <update_rate>30</update_rate>
+        <topic>/camera/depth/image_raw</topic>
+        <camera name="depth">
+          <horizontal_fov>1.211</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R_FLOAT32</format>
+          </image>
+          <clip>
+            <near>0.10</near>
+            <far>10.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+</robot>
