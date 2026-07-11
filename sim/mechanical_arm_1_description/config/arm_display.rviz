@@ -30,6 +30,7 @@ Visualization Manager:
       Enabled: true
       Name: Mechanical Arm
       Value: true
+      Collision Enabled: true
       Visual Enabled: true
     - Class: rviz_default_plugins/TF
       Enabled: true
