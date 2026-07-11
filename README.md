@@ -19,11 +19,13 @@
 [模型目录](models/risk_vision/) |
 [提交材料索引](SUBMISSION.md)
 
+**语言 / Language**：中文 | [English](README.en.md)
+
 </div>
 
 ## 项目简介
 
-本仓库为进迭时空 K1 MUSE Pi Pro 边缘 AI 应用赛道的开源提交版。项目面向 GPS 拒止、通信受限、云端不可依赖的巡检场景，构建一套在端侧完成建图、感知、风险定位、处置规划和报告生成的移动机器人系统。
+本仓库为进迭时空 K1 MUSE Pi Pro 边缘 AI 应用赛道的公开源码提交版。项目面向 GPS 拒止、通信受限、云端不可依赖的巡检场景，构建一套在端侧完成建图、感知、风险定位、处置规划和报告生成的移动机器人系统。
 
 当前系统已经集成：
 
@@ -55,12 +57,12 @@ RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地
 ## 更新记录
 
 - **2026-07-11**：完成 Ubuntu Humble 仿真自主建图录屏基线：Gazebo 履带底盘、N10P 雷达、D435、`slam_toolbox`、RRT frontier、Nav2、安全守护和 RViz 轨迹显示。
-- **2026-07-08**：整理 GitHub 开源提交仓库，补充代码、报告、模型、样例地图、evidence 和演示材料。
+- **2026-07-08**：整理 GitHub 公开源码提交仓库，补充代码、报告、模型、样例地图、evidence 和演示材料。
 - **2026-07-07**：根据实机场景完成 confidence + depth 联合门限调整。
 - **2026-07-06**：完成演示链路：SLAM-Frontier 自主探测、D435 YOLO、风险地图、dashboard 和 LLM 报告。
 - **2026-07-03**：完成 K1 D435 YOLO 部署流程，并验证 SpaceMIT Execution Provider 推理路径。
 - **2026-06-30**：完成机械臂 no-load 安全响应和地图门控动作接口。
-  `
+
 ## 核心亮点
 
 ### K1 端侧 AI 推理
@@ -273,7 +275,7 @@ models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 ## 文档索引
 
 - [提交材料索引](SUBMISSION.md)
-- [开源范围说明](docs/OPEN_SOURCE_SCOPE.md)
+- [公开源码范围说明](docs/OPEN_SOURCE_SCOPE.md)
 - [最终项目报告](docs/report/spacemit_k1_edge_ai_robot_report.docx)
 - [遥控建图 + YOLO + 机械臂演示设计](docs/prelim_remote_mapping_yolo_arm_demo_20260703.md)
 - [系统协议与整体逻辑](docs/k1_full_system_protocol_and_logic_20260630.md)
