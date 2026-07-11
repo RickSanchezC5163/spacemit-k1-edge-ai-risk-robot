@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <robot name="mechanical_arm_1">
-  <link name="base_link">
+  <link name="base_link" />
+  <link name="arm_base_link">
     <inertial>
       <origin xyz="0.01387 -0.046307 0.082791" rpy="0 0 0" />
       <mass value="0.054017" />
@@ -64,10 +65,15 @@
   </link>
   <joint name="j1" type="revolute">
     <origin xyz="0.0466 -0.078476 -0.046289" rpy="0 1.5708 0" />
-    <parent link="base_link" />
+    <parent link="arm_base_link" />
     <child link="Link1" />
     <axis xyz="0 0 -1" />
     <limit lower="-1.5708" upper="1.5708" effort="2.0" velocity="1.0" />
+  </joint>
+  <joint name="base_axis_fix" type="fixed">
+    <origin xyz="0 0 0" rpy="0 -1.5708 0" />
+    <parent link="base_link" />
+    <child link="arm_base_link" />
   </joint>
   <link name="Link2">
     <inertial>
