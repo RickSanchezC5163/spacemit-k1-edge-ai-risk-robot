@@ -25,12 +25,6 @@
         <color rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <mesh filename="package://mechanical_arm_1_description/meshes/base_link.STL" />
-      </geometry>
-    </collision>
   </link>
   <link name="Link1">
     <inertial>
@@ -56,12 +50,6 @@
         <color rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <mesh filename="package://mechanical_arm_1_description/meshes/Link1.STL" />
-      </geometry>
-    </collision>
   </link>
   <joint name="j1" type="revolute">
     <origin xyz="0.0466 -0.078476 -0.046289" rpy="0 1.5708 0" />
@@ -99,12 +87,6 @@
         <color rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <mesh filename="package://mechanical_arm_1_description/meshes/Link2.STL" />
-      </geometry>
-    </collision>
   </link>
   <joint name="j2" type="revolute">
     <origin xyz="0.025109 0.011696 0.0466" rpy="0 0 0" />
@@ -137,12 +119,6 @@
         <color rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <mesh filename="package://mechanical_arm_1_description/meshes/Link3.STL" />
-      </geometry>
-    </collision>
   </link>
   <joint name="j3" type="revolute">
     <origin xyz="-0.067934 0.025532 0.17282" rpy="0 0 0" />
@@ -175,12 +151,6 @@
         <color rgba="0.75294 0.75294 0.75294 1" />
       </material>
     </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <mesh filename="package://mechanical_arm_1_description/meshes/Link4.STL" />
-      </geometry>
-    </collision>
   </link>
   <joint name="j4" type="revolute">
     <origin xyz="0.042971 0.040611 0.033065" rpy="0 0 0" />
