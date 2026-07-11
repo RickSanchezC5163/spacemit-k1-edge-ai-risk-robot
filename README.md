@@ -4,7 +4,7 @@
 
 ### 基于进迭时空 K1 的 SLAM-Frontier 自主探测、YOLO 风险识别、风险落图、MoveIt+RL 响应与本地 LLM 报告
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange.svg)](LICENSE)
 [![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-blue)](https://docs.ros.org/en/humble/)
 [![SpaceMIT K1](https://img.shields.io/badge/SpaceMIT-K1%20MUSE%20Pi%20Pro-purple)](https://www.spacemit.com/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-SpaceMIT%20EP-orange)](https://onnxruntime.ai/)
@@ -280,9 +280,11 @@ models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 - [本地 LLM 报告接口](docs/local_llm_report_interface_20260701.md)
 - [风险地图总结接口](docs/risk_map_summary_interface_20260702.md)
 
-## 开源协议
+## 许可协议
 
-本仓库采用 [MIT License](LICENSE) 开源。
+本仓库采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权。
+允许学习、研究、测试、教育和非商用展示使用；未经额外书面授权，
+不得用于商业用途、商业产品集成、商业部署或商业转授权。
 
 ## 引用
 

@@ -8,6 +8,12 @@
 https://github.com/<your-account>/spacemit-k1-edge-ai-risk-robot
 ```
 
+## 许可说明
+
+本仓库采用 `PolyForm Noncommercial License 1.0.0`。源码公开用于学习、
+研究、测试、教学和非商用展示；未经额外书面授权，不允许商业使用、
+商业集成、商业部署或商业转授权。
+
 ## 赛题要求对应
 
 | 要求 | 仓库位置 |
