@@ -35,7 +35,7 @@ sim/mechanical_arm_1_description/
 ## Build
 
 ```bash
-cd /path/to/spacemit-k1-edge-ai-risk-robot
+cd /path/to/repo
 source /opt/ros/humble/setup.bash
 colcon build --base-paths sim --symlink-install
 source install/setup.bash
@@ -46,6 +46,9 @@ source install/setup.bash
 ```bash
 ros2 launch mechanical_arm_1_description display.launch.py
 ```
+
+The launch loads `config/arm_display.rviz`, which sets `base_link` as the fixed
+frame and enables Grid, RobotModel, TF link axes, and a larger base XYZ axis.
 
 ## Integration Plan
 

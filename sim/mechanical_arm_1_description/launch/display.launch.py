@@ -10,6 +10,7 @@ def generate_launch_description():
     robot_urdf = PathJoinSubstitution(
         [pkg_share, "urdf", "mechanical_arm_1_visual.urdf"]
     )
+    rviz_config = PathJoinSubstitution([pkg_share, "config", "arm_display.rviz"])
 
     robot_description = {
         "robot_description": Command([FindExecutable(name="xacro"), " ", robot_urdf])
@@ -31,6 +32,7 @@ def generate_launch_description():
             Node(
                 package="rviz2",
                 executable="rviz2",
+                arguments=["-d", rviz_config],
                 output="screen",
             ),
         ]
