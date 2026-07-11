@@ -31,6 +31,7 @@
 
 - 基于 ROS2、雷达、里程计和安全守护的遥控二维建图。
 - Ubuntu ROS2 Humble + Gazebo + RViz 下的 SLAM-Frontier/RRT/Nav2 自主建图仿真。
+- SolidWorks/SW2URDF 机械臂导入包，作为后续 MoveIt 与 leakage 处置仿真的独立模型。
 - Intel RealSense D435 RGB-D 输入和 K1 本地 YOLOv8n ONNX 推理。
 - 面向 `crack`、`corrosion`、`blockage`、`leakage` 的风险识别。
 - 结合 confidence 与 depth 的自动报警和落图门限。
@@ -91,6 +92,7 @@ Gazebo tracked base + N10P lidar + D435-style camera
 - 进度记录：`docs/autonomous_mapping_progress_20260711.md`
 - 仿真包：`sim/tracked_robot_description/`
 - 录屏：`demo/recordings/`
+- 机械臂导入审计：`docs/mechanical_arm_1_import_audit_20260711.md`
 
 现场记录指标：
 
@@ -281,6 +283,7 @@ models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 - [系统协议与整体逻辑](docs/k1_full_system_protocol_and_logic_20260630.md)
 - [本地 LLM 报告接口](docs/local_llm_report_interface_20260701.md)
 - [风险地图总结接口](docs/risk_map_summary_interface_20260702.md)
+- [机械臂 SW2URDF 导入审计](docs/mechanical_arm_1_import_audit_20260711.md)
 
 ## 许可协议
 

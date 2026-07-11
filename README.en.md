@@ -36,6 +36,8 @@ The current system includes:
 - ROS2-based 2D mapping with lidar, odometry, and a scan safety guard.
 - Ubuntu ROS2 Humble + Gazebo + RViz simulation for SLAM-Frontier/RRT/Nav2
   autonomous exploration.
+- SolidWorks/SW2URDF mechanical arm import package for separated MoveIt and
+  leakage-response simulation.
 - Intel RealSense D435 RGB-D input and local YOLOv8n ONNX inference on K1.
 - Risk detection for `crack`, `corrosion`, `blockage`, and `leakage`.
 - Confidence + depth gates for alarm generation and risk point projection.
@@ -113,6 +115,7 @@ Related materials:
 - Progress note: `docs/autonomous_mapping_progress_20260711.md`
 - Simulation package: `sim/tracked_robot_description/`
 - Recordings: `demo/recordings/`
+- Mechanical arm import audit: `docs/mechanical_arm_1_import_audit_20260711.md`
 
 ### Risk Spatialization
 
@@ -273,6 +276,7 @@ location figures, and the final LLM report.
 - [System Protocol and Logic](docs/k1_full_system_protocol_and_logic_20260630.md)
 - [Local LLM Report Interface](docs/local_llm_report_interface_20260701.md)
 - [Risk Map Summary Interface](docs/risk_map_summary_interface_20260702.md)
+- [Mechanical Arm SW2URDF Import Audit](docs/mechanical_arm_1_import_audit_20260711.md)
 
 ## License
 

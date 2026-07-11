@@ -5,6 +5,7 @@ Gazebo / ROS 2 simulation assets live here.
 Current package:
 
 - `tracked_robot_description`: URDF/Xacro model for the tracked mobile base with N10P lidar and D435-style camera. The mechanical arm is simulated separately after SW2URDF export validation.
+- `mechanical_arm_1_description`: imported SW2URDF mechanical arm package for separated RViz/Gazebo/MoveIt validation.
 
 ## Build
 
@@ -23,4 +24,5 @@ source install/setup.bash
 ```bash
 ros2 launch tracked_robot_description display.launch.py
 ros2 launch tracked_robot_description gazebo.launch.py
+ros2 launch mechanical_arm_1_description display.launch.py
 ```
