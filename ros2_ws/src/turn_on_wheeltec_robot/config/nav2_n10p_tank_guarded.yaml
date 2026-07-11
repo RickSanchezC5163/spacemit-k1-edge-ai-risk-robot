@@ -41,21 +41,21 @@ controller_server:
       debug_trajectory_details: false
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.25
+      max_vel_x: 2.00
       max_vel_y: 0.0
-      max_vel_theta: 0.35
+      max_vel_theta: 1.20
       min_speed_xy: 0.0
-      max_speed_xy: 0.25
+      max_speed_xy: 2.00
       min_speed_theta: 0.0
-      acc_lim_x: 0.25
+      acc_lim_x: 2.50
       acc_lim_y: 0.0
-      acc_lim_theta: 0.45
-      decel_lim_x: -0.45
+      acc_lim_theta: 3.00
+      decel_lim_x: -2.50
       decel_lim_y: 0.0
-      decel_lim_theta: -0.60
-      vx_samples: 12
+      decel_lim_theta: -3.00
+      vx_samples: 20
       vy_samples: 0
-      vtheta_samples: 24
+      vtheta_samples: 31
       sim_time: 1.2
       linear_granularity: 0.05
       angular_granularity: 0.05

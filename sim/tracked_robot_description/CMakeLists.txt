@@ -12,6 +12,8 @@ install(
   PROGRAMS
     scripts/odom_tf_broadcaster.py
     scripts/odom_path_publisher.py
+    scripts/risk_approach_goal_node.py
+    scripts/sim_risk_marker_detector.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

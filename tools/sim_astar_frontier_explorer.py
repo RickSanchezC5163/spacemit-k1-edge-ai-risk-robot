@@ -38,9 +38,12 @@ class AStarFrontierExplorer(Node):
         self.replan_at = 0.0
         self.goal_count = 0
         self.records = []
+        self.risk_detected = False
         self.cmd_pub = self.create_publisher(Twist, args.cmd_topic, 10)
         self.create_subscription(OccupancyGrid, args.map_topic, self.map_cb, 10)
         self.create_subscription(String, args.status_topic, self.status_cb, 10)
+        if args.stop_on_risk_topic:
+            self.create_subscription(String, args.stop_on_risk_topic, self.risk_cb, 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -52,6 +55,14 @@ class AStarFrontierExplorer(Node):
             self.status = json.loads(msg.data)
         except json.JSONDecodeError:
             self.status = {}
+
+    def risk_cb(self, msg):
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+        if int(payload.get("detection_count") or 0) > 0:
+            self.risk_detected = True
 
     def wait_ready(self):
         deadline = time.monotonic() + self.args.wait_ready_s
@@ -191,6 +202,10 @@ class AStarFrontierExplorer(Node):
         self.cmd_pub.publish(Twist())
 
     def step(self):
+        if self.risk_detected:
+            self.publish_zero()
+            return "risk_detected"
+
         pose = self.robot_pose()
         if self.map_msg is None or pose is None:
             self.publish_zero()
@@ -257,6 +272,8 @@ class AStarFrontierExplorer(Node):
         status = "running"
         while rclpy.ok() and time.monotonic() < end and self.goal_count < self.args.max_goals:
             status = self.step()
+            if status == "risk_detected":
+                break
             rclpy.spin_once(self, timeout_sec=0.0)
             rate.sleep()
         self.publish_zero()
@@ -279,6 +296,7 @@ def parse_args():
     parser.add_argument("--cmd-topic", default="/input_cmd_vel")
     parser.add_argument("--map-topic", default="/map")
     parser.add_argument("--status-topic", default="/safety/front_obstacle")
+    parser.add_argument("--stop-on-risk-topic", default="")
     parser.add_argument("--map-frame", default="map")
     parser.add_argument("--base-frame", default="base_footprint")
     parser.add_argument("--runtime-s", type=float, default=120.0)

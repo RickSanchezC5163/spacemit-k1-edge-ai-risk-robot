@@ -97,6 +97,24 @@ Visualization Manager:
       Topic:
         Value: /trajectory
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Value: /risk/sim_markers
+      Name: Sim Risk Markers
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Marker Topic:
+        Value: /risk/approach_goal_marker
+      Name: Risk Approach Goal
+      Namespaces:
+        {}
+      Queue Size: 10
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
