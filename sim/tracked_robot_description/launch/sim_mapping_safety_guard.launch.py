@@ -103,6 +103,7 @@ def generate_launch_description():
             "fail_closed_without_scan": True,
             "publish_events": True,
             "output_rate_hz": 50.0,
+            "use_sim_time": True,
         }],
     )
 

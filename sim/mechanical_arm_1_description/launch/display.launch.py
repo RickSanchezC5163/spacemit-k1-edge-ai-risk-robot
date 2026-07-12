@@ -5,6 +5,17 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
+HOME_JOINT_ZEROS = {
+    "zeros": {
+        # Calibrated from joint_state_publisher_gui on 2026-07-12.
+        "j1": 0.415948,
+        "j2": -1.5708,
+        "j3": 1.8,
+        "j4": -0.636802,
+    }
+}
+
+
 def generate_launch_description():
     pkg_share = FindPackageShare("mechanical_arm_1_description")
     robot_urdf = PathJoinSubstitution(
@@ -27,6 +38,7 @@ def generate_launch_description():
             Node(
                 package="joint_state_publisher_gui",
                 executable="joint_state_publisher_gui",
+                parameters=[HOME_JOINT_ZEROS],
                 output="screen",
             ),
             Node(

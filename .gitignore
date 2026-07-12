@@ -18,6 +18,7 @@ datasets/
 *.avi
 *.mov
 *.mp4
+*.webm
 !demo/*.mp4
 
 *.pt

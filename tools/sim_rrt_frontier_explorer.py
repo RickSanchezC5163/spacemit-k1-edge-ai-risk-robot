@@ -48,6 +48,8 @@ class RRTFrontierExplorer(Node):
         self.risk_detected = False
         self.records = []
         self.goal_count = 0
+        self.rejected_cells = []
+        self.recent_goal_cells = []
         self.random = random.Random(args.seed)
         self.goal_pub = self.create_publisher(PoseStamped, args.goal_topic, 10)
         self.create_subscription(OccupancyGrid, args.map_topic, self.map_cb, 10)
@@ -66,6 +68,9 @@ class RRTFrontierExplorer(Node):
         try:
             payload = json.loads(msg.data)
         except json.JSONDecodeError:
+            return
+        if payload.get("active_risk_id") is not None and payload.get("state") != "idle":
+            self.risk_detected = True
             return
         if int(payload.get("detection_count") or 0) > 0:
             self.risk_detected = True
@@ -142,9 +147,52 @@ class RRTFrontierExplorer(Node):
     def is_frontier(self, cell):
         if not self.is_free(cell):
             return False
+        if self.near_map_edge(cell):
+            return False
         if self.near_obstacle(cell, self.inflation_cells()):
             return False
         return any(self.is_unknown(nb) for nb in self.neighbors8(cell))
+
+    def near_map_edge(self, cell):
+        margin_cells = max(0, int(self.args.map_edge_margin_m / self.map_msg.info.resolution))
+        return (
+            cell[0] < margin_cells
+            or cell[1] < margin_cells
+            or cell[0] >= self.map_msg.info.width - margin_cells
+            or cell[1] >= self.map_msg.info.height - margin_cells
+        )
+
+    def near_suppressed_goal(self, cell):
+        min_dist_cells = max(1, int(self.args.goal_separation_m / self.map_msg.info.resolution))
+        min_dist_sq = min_dist_cells * min_dist_cells
+        for old in self.rejected_cells + self.recent_goal_cells[-self.args.recent_goal_memory :]:
+            if (cell[0] - old[0]) ** 2 + (cell[1] - old[1]) ** 2 <= min_dist_sq:
+                return True
+        return False
+
+    def frontier_goal_cell(self, frontier_cell, start_cell):
+        retreat_cells = max(0, int(self.args.frontier_standoff_m / self.map_msg.info.resolution))
+        fx, fy = frontier_cell
+        sx, sy = start_cell
+        dx = sx - fx
+        dy = sy - fy
+        dist = math.hypot(dx, dy)
+        if dist < 1e-6 or retreat_cells == 0:
+            return frontier_cell
+        for step in range(retreat_cells, -1, -1):
+            cell = (
+                int(round(fx + dx / dist * step)),
+                int(round(fy + dy / dist * step)),
+            )
+            if (
+                0 <= cell[0] < self.map_msg.info.width
+                and 0 <= cell[1] < self.map_msg.info.height
+                and self.is_free(cell)
+                and not self.near_obstacle(cell, self.inflation_cells())
+                and not self.near_map_edge(cell)
+            ):
+                return cell
+        return frontier_cell
 
     def inflation_cells(self):
         return max(1, int(self.args.inflation_m / self.map_msg.info.resolution))
@@ -205,9 +253,12 @@ class RRTFrontierExplorer(Node):
                 continue
             nodes.append(new_cell)
             if self.is_frontier(new_cell):
-                d = abs(new_cell[0] - start[0]) + abs(new_cell[1] - start[1])
+                goal_cell = self.frontier_goal_cell(new_cell, start)
+                if self.near_suppressed_goal(goal_cell):
+                    continue
+                d = abs(goal_cell[0] - start[0]) + abs(goal_cell[1] - start[1])
                 if d >= min_goal_cells:
-                    return new_cell, "frontier"
+                    return goal_cell, "frontier_standoff"
         return None, "no_frontier"
 
     def make_goal(self, cell):
@@ -284,12 +335,15 @@ class RRTFrontierExplorer(Node):
                 "time_s": round(time.monotonic() - started, 2),
             }
             print("RRT_GOAL", json.dumps(record), flush=True)
+            self.recent_goal_cells.append(cell)
             nav_status = self.send_goal(goal)
             record["nav_status"] = nav_status
             self.records.append(record)
             if nav_status == "risk_detected":
                 status = nav_status
                 break
+            if nav_status not in ("status_4", "published_only"):
+                self.rejected_cells.append(cell)
         else:
             status = "complete"
         summary = {
@@ -328,6 +382,10 @@ def parse_args():
     parser.add_argument("--goal-result-timeout-s", type=float, default=25.0)
     parser.add_argument("--replan-sleep-s", type=float, default=1.0)
     parser.add_argument("--yaw-step-deg", type=float, default=30.0)
+    parser.add_argument("--goal-separation-m", type=float, default=0.45)
+    parser.add_argument("--recent-goal-memory", type=int, default=24)
+    parser.add_argument("--frontier-standoff-m", type=float, default=0.35)
+    parser.add_argument("--map-edge-margin-m", type=float, default=0.15)
     parser.add_argument("--send-nav2-action", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--report", default="")

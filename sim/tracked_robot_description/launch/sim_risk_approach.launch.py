@@ -15,6 +15,7 @@ def generate_launch_description():
     send_nav2_action = LaunchConfiguration("send_nav2_action")
     start_rviz = LaunchConfiguration("start_rviz")
     detection_radius_m = LaunchConfiguration("detection_radius_m")
+    arrival_tolerance_m = LaunchConfiguration("arrival_tolerance_m")
 
     return LaunchDescription(
         [
@@ -43,6 +44,11 @@ def generate_launch_description():
                 default_value="1.8",
                 description="Simulated D435/YOLO detection radius for risk cards.",
             ),
+            DeclareLaunchArgument(
+                "arrival_tolerance_m",
+                default_value="0.18",
+                description="Goal-distance threshold for recording a risk observation.",
+            ),
             Node(
                 package="tracked_robot_description",
                 executable="sim_risk_marker_detector.py",
@@ -68,7 +74,7 @@ def generate_launch_description():
                     {
                         "output_dir": output_dir,
                         "stand_off_m": 0.65,
-                        "arrival_tolerance_m": 0.18,
+                        "arrival_tolerance_m": arrival_tolerance_m,
                         "settle_time_s": 1.2,
                         "send_nav2_action": send_nav2_action,
                         "map_frame": "map",
@@ -81,6 +87,7 @@ def generate_launch_description():
                 package="rviz2",
                 executable="rviz2",
                 arguments=["-d", rviz_config],
+                parameters=[{"use_sim_time": True}],
                 condition=IfCondition(start_rviz),
                 output="screen",
             ),

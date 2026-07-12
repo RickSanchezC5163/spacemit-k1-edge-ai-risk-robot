@@ -89,7 +89,7 @@ class RiskApproachGoalNode(Node):
 
         self.latest_odom = None
         self.latest_image = None
-        self.completed_ids = set()
+        self.completed_ids = self._load_completed_ids()
         self.active = None
         self.last_goal_time = 0.0
         self.arrival_started_at = None
@@ -111,6 +111,27 @@ class RiskApproachGoalNode(Node):
         self.get_logger().info(
             f"Risk approach ready: stand_off={self.stand_off_m:.2f}m output={self.output_dir}"
         )
+
+    def _load_completed_ids(self):
+        completed = set()
+        records_path = self.output_dir / "risk_approach_records.jsonl"
+        if not records_path.exists():
+            return completed
+        try:
+            with records_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    risk_id = (record.get("risk") or {}).get("id")
+                    if risk_id:
+                        completed.add(str(risk_id))
+        except OSError as exc:
+            self.get_logger().warn(f"Could not read existing risk records: {exc}")
+        if completed:
+            self.get_logger().info(f"Loaded completed risk ids: {sorted(completed)}")
+        return completed
 
     def _odom_cb(self, msg):
         self.latest_odom = msg
