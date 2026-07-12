@@ -38,6 +38,7 @@
 - 将 `bbox + depth + odom` 转换为地图坐标风险点。
 - 浏览器 dashboard 展示 YOLO overlay、`infer_fps`、`front_min`、odom、报警和风险地图。
 - SLAM-Frontier 自主探测与 RRT/A*/Nav2 路径生成接口。
+- MoveIt 机械臂仿真配置、`link4_tip_link` 末端 TCP 标定与地面任务到达验证。
 - MoveIt+RL 风格的机械臂处置动作候选与 no-load 安全响应。
 - 本地 LLM CLI 根据结构化风险点生成最终风险报告。
 
@@ -57,6 +58,7 @@ RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地
 
 ## 更新记录
 
+- **2026-07-12**：完成机械臂 MoveIt 地面任务 TCP 到达验证；以 `link4_tip_link` 作为第四截末端 TCP，1000 个保守地面工作区目标全部规划并到达，最大 TCP 误差约 7.18 mm，平均约 2.52 mm。记录见 `docs/mechanical_arm_moveit_tcp_reach_20260712.md`，本地输出位于 `outputs/moveit_arm_visual_ground_tcp_direct_marker_1000/`。
 - **2026-07-11**：完成 Ubuntu Humble 仿真自主建图录屏基线：Gazebo 履带底盘、N10P 雷达、D435、`slam_toolbox`、RRT frontier、Nav2、安全守护和 RViz 轨迹显示。
 - **2026-07-08**：整理 GitHub 公开源码提交仓库，补充代码、报告、模型、样例地图、evidence 和演示材料。
 - **2026-07-07**：根据实机场景完成 confidence + depth 联合门限调整。
