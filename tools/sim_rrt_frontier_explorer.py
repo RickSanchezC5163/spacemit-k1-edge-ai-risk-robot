@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from collections import deque
 import json
 import math
 import random
@@ -48,8 +49,11 @@ class RRTFrontierExplorer(Node):
         self.risk_detected = False
         self.records = []
         self.goal_count = 0
+        self.consecutive_failures = 0
+        self.failure_backoff_until = 0.0
         self.rejected_cells = []
         self.recent_goal_cells = []
+        self.last_goal_meta = {}
         self.random = random.Random(args.seed)
         self.goal_pub = self.create_publisher(PoseStamped, args.goal_topic, 10)
         self.create_subscription(OccupancyGrid, args.map_topic, self.map_cb, 10)
@@ -123,6 +127,9 @@ class RRTFrontierExplorer(Node):
     def idx(self, cell):
         return cell[1] * self.map_msg.info.width + cell[0]
 
+    def in_bounds(self, cell):
+        return 0 <= cell[0] < self.map_msg.info.width and 0 <= cell[1] < self.map_msg.info.height
+
     def value(self, cell):
         return self.map_msg.data[self.idx(cell)]
 
@@ -139,8 +146,15 @@ class RRTFrontierExplorer(Node):
                 if dx == 0 and dy == 0:
                     continue
                 nb = (x + dx, y + dy)
-                if 0 <= nb[0] < self.map_msg.info.width and 0 <= nb[1] < self.map_msg.info.height:
+                if self.in_bounds(nb):
                     yield nb
+
+    def neighbors4(self, cell):
+        x, y = cell
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nb = (x + dx, y + dy)
+            if self.in_bounds(nb):
+                yield nb
 
     def near_obstacle(self, cell, radius_cells):
         cx, cy = cell
@@ -150,12 +164,20 @@ class RRTFrontierExplorer(Node):
                     return True
         return False
 
-    def is_frontier(self, cell):
+    def is_safe_free(self, cell, inflation_cells=None):
         if not self.is_free(cell):
             return False
         if self.near_map_edge(cell):
             return False
-        if self.near_obstacle(cell, self.inflation_cells()):
+        if inflation_cells is None:
+            inflation_cells = self.inflation_cells()
+        return not self.near_obstacle(cell, inflation_cells)
+
+    def is_frontier(self, cell):
+        return self.is_frontier_with_inflation(cell, self.inflation_cells())
+
+    def is_frontier_with_inflation(self, cell, inflation_cells):
+        if not self.is_safe_free(cell, inflation_cells):
             return False
         return any(self.is_unknown(nb) for nb in self.neighbors8(cell))
 
@@ -169,12 +191,38 @@ class RRTFrontierExplorer(Node):
         )
 
     def near_suppressed_goal(self, cell):
-        min_dist_cells = max(1, int(self.args.goal_separation_m / self.map_msg.info.resolution))
-        min_dist_sq = min_dist_cells * min_dist_cells
-        for old in self.rejected_cells + self.recent_goal_cells[-self.args.recent_goal_memory :]:
-            if (cell[0] - old[0]) ** 2 + (cell[1] - old[1]) ** 2 <= min_dist_sq:
-                return True
+        recent_dist_cells = max(1, int(self.args.goal_separation_m / self.map_msg.info.resolution))
+        recent_dist_sq = recent_dist_cells * recent_dist_cells
+        if self.args.rejected_goal_memory > 0:
+            rejected_dist_cells = max(
+                recent_dist_cells,
+                int(self.args.rejected_goal_separation_m / self.map_msg.info.resolution),
+            )
+            rejected_dist_sq = rejected_dist_cells * rejected_dist_cells
+            for old in self.rejected_cells[-self.args.rejected_goal_memory :]:
+                if (cell[0] - old[0]) ** 2 + (cell[1] - old[1]) ** 2 <= rejected_dist_sq:
+                    return True
+        if self.args.recent_goal_memory > 0:
+            for old in self.recent_goal_cells[-self.args.recent_goal_memory :]:
+                if (cell[0] - old[0]) ** 2 + (cell[1] - old[1]) ** 2 <= recent_dist_sq:
+                    return True
         return False
+
+    def is_free_roam_goal(self, cell, start, min_goal_cells):
+        if not self.is_free(cell):
+            return False
+        if self.near_map_edge(cell):
+            return False
+        if self.near_obstacle(cell, self.inflation_cells()):
+            return False
+        if self.near_suppressed_goal(cell):
+            return False
+        dist = math.hypot(cell[0] - start[0], cell[1] - start[1])
+        min_free_roam_cells = max(
+            min_goal_cells,
+            int(self.args.free_roam_min_distance_m / self.map_msg.info.resolution),
+        )
+        return dist >= min_free_roam_cells
 
     def nearest_free_start_cell(self, start):
         if start is None:
@@ -201,7 +249,154 @@ class RRTFrontierExplorer(Node):
                 return best
         return None
 
-    def frontier_goal_cell(self, frontier_cell, start_cell):
+    def frontier_backoffs_m(self):
+        values = [max(0.0, float(self.args.frontier_standoff_m))]
+        for raw in str(self.args.frontier_backoffs_m).split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                value = max(0.0, float(raw))
+            except ValueError:
+                continue
+            if all(abs(value - existing) > 1e-6 for existing in values):
+                values.append(value)
+        return values
+
+    def unknown_direction(self, frontier_cell, start_cell):
+        fx, fy = frontier_cell
+        ux = 0.0
+        uy = 0.0
+        for nb in self.neighbors8(frontier_cell):
+            if not self.is_unknown(nb):
+                continue
+            ux += nb[0] - fx
+            uy += nb[1] - fy
+        dist = math.hypot(ux, uy)
+        if dist >= 1e-6:
+            return ux / dist, uy / dist, "unknown_normal"
+
+        sx, sy = start_cell
+        ux = fx - sx
+        uy = fy - sy
+        dist = math.hypot(ux, uy)
+        if dist >= 1e-6:
+            return ux / dist, uy / dist, "start_vector"
+        return 0.0, 0.0, "none"
+
+    def nearest_safe_goal_cell(self, target_cell, max_radius_cells=2):
+        if self.in_bounds(target_cell) and self.is_safe_free(target_cell):
+            return target_cell
+        tx, ty = target_cell
+        best = None
+        best_dist_sq = None
+        for radius in range(1, max(1, max_radius_cells) + 1):
+            for y in range(max(0, ty - radius), min(self.map_msg.info.height, ty + radius + 1)):
+                for x in range(max(0, tx - radius), min(self.map_msg.info.width, tx + radius + 1)):
+                    cell = (x, y)
+                    if not self.is_safe_free(cell):
+                        continue
+                    dist_sq = (x - tx) ** 2 + (y - ty) ** 2
+                    if best is None or dist_sq < best_dist_sq:
+                        best = cell
+                        best_dist_sq = dist_sq
+            if best is not None:
+                return best
+        return None
+
+    def clearance_m(self, cell):
+        max_radius_cells = max(1, int(self.args.goal_clearance_check_m / self.map_msg.info.resolution))
+        cx, cy = cell
+        best_dist_sq = None
+        for y in range(max(0, cy - max_radius_cells), min(self.map_msg.info.height, cy + max_radius_cells + 1)):
+            for x in range(max(0, cx - max_radius_cells), min(self.map_msg.info.width, cx + max_radius_cells + 1)):
+                if self.map_msg.data[y * self.map_msg.info.width + x] < self.args.occupied_threshold:
+                    continue
+                dist_sq = (x - cx) ** 2 + (y - cy) ** 2
+                if best_dist_sq is None or dist_sq < best_dist_sq:
+                    best_dist_sq = dist_sq
+        if best_dist_sq is None:
+            return max_radius_cells * self.map_msg.info.resolution
+        return math.sqrt(best_dist_sq) * self.map_msg.info.resolution
+
+    def frontier_goal_cell(self, frontier_cell, start_cell, reachable_cells=None):
+        resolution = self.map_msg.info.resolution
+        ux, uy, direction_source = self.unknown_direction(frontier_cell, start_cell)
+        if direction_source == "none":
+            return frontier_cell, {
+                "frontier_cell": [frontier_cell[0], frontier_cell[1]],
+                "candidate_type": "frontier_raw",
+                "direction_source": direction_source,
+                "goal_clearance_m": round(self.clearance_m(frontier_cell), 3),
+            }
+
+        candidates = []
+        for backoff_m in self.frontier_backoffs_m():
+            step = backoff_m / resolution
+            raw_cell = (
+                int(round(frontier_cell[0] - ux * step)),
+                int(round(frontier_cell[1] - uy * step)),
+            )
+            goal_cell = self.nearest_safe_goal_cell(raw_cell, max_radius_cells=2)
+            if goal_cell is None:
+                continue
+            if reachable_cells is not None and goal_cell not in reachable_cells:
+                continue
+            clearance = self.clearance_m(goal_cell)
+            dist_from_start = math.hypot(goal_cell[0] - start_cell[0], goal_cell[1] - start_cell[1])
+            candidates.append(
+                {
+                    "cell": goal_cell,
+                    "backoff_m": backoff_m,
+                    "clearance_m": clearance,
+                    "dist_from_start": dist_from_start,
+                    "raw_cell": raw_cell,
+                }
+            )
+
+        if not candidates:
+            return frontier_cell, {
+                "frontier_cell": [frontier_cell[0], frontier_cell[1]],
+                "candidate_type": "frontier_raw_fallback",
+                "direction_source": direction_source,
+                "goal_clearance_m": round(self.clearance_m(frontier_cell), 3),
+                "candidate_count": 0,
+            }
+
+        best = max(
+            candidates,
+            key=lambda item: (
+                item["clearance_m"],
+                -abs(item["backoff_m"] - self.args.frontier_standoff_m),
+                -item["dist_from_start"],
+                self.random.random() * 0.001,
+            ),
+        )
+        cell = best["cell"]
+        return cell, {
+            "frontier_cell": [frontier_cell[0], frontier_cell[1]],
+            "candidate_type": "frontier_backoff",
+            "direction_source": direction_source,
+            "candidate_count": len(candidates),
+            "candidate_backoff_m": round(best["backoff_m"], 3),
+            "goal_clearance_m": round(best["clearance_m"], 3),
+            "candidate_raw_cell": [best["raw_cell"][0], best["raw_cell"][1]],
+        }
+
+    def inflation_cells(self):
+        return max(1, int(self.args.inflation_m / self.map_msg.info.resolution))
+
+    def sample_free_cell(self, start):
+        radius_cells = int(self.args.sample_radius_m / self.map_msg.info.resolution)
+        for _ in range(100):
+            x = self.random.randint(max(0, start[0] - radius_cells), min(self.map_msg.info.width - 1, start[0] + radius_cells))
+            y = self.random.randint(max(0, start[1] - radius_cells), min(self.map_msg.info.height - 1, start[1] + radius_cells))
+            cell = (x, y)
+            if self.is_free(cell) and not self.near_obstacle(cell, self.inflation_cells()):
+                return cell
+        return None
+
+    def legacy_frontier_goal_cell(self, frontier_cell, start_cell):
         retreat_cells = max(0, int(self.args.frontier_standoff_m / self.map_msg.info.resolution))
         fx, fy = frontier_cell
         sx, sy = start_cell
@@ -216,27 +411,11 @@ class RRTFrontierExplorer(Node):
                 int(round(fy + dy / dist * step)),
             )
             if (
-                0 <= cell[0] < self.map_msg.info.width
-                and 0 <= cell[1] < self.map_msg.info.height
-                and self.is_free(cell)
-                and not self.near_obstacle(cell, self.inflation_cells())
-                and not self.near_map_edge(cell)
+                self.in_bounds(cell)
+                and self.is_safe_free(cell)
             ):
                 return cell
         return frontier_cell
-
-    def inflation_cells(self):
-        return max(1, int(self.args.inflation_m / self.map_msg.info.resolution))
-
-    def sample_free_cell(self, start):
-        radius_cells = int(self.args.sample_radius_m / self.map_msg.info.resolution)
-        for _ in range(100):
-            x = self.random.randint(max(0, start[0] - radius_cells), min(self.map_msg.info.width - 1, start[0] + radius_cells))
-            y = self.random.randint(max(0, start[1] - radius_cells), min(self.map_msg.info.height - 1, start[1] + radius_cells))
-            cell = (x, y)
-            if self.is_free(cell) and not self.near_obstacle(cell, self.inflation_cells()):
-                return cell
-        return None
 
     def steer(self, from_cell, to_cell):
         dx = to_cell[0] - from_cell[0]
@@ -260,7 +439,151 @@ class RRTFrontierExplorer(Node):
                 return False
         return True
 
+    def cluster_frontiers(self, frontier_cells):
+        remaining = set(frontier_cells)
+        clusters = []
+        while remaining:
+            seed = remaining.pop()
+            queue = deque([seed])
+            cluster = [seed]
+            while queue:
+                cell = queue.popleft()
+                for nb in self.neighbors8(cell):
+                    if nb not in remaining:
+                        continue
+                    remaining.remove(nb)
+                    queue.append(nb)
+                    cluster.append(nb)
+            clusters.append(cluster)
+        return clusters
+
+    def choose_wfd_goal(self, start, min_goal_cells):
+        radius_cells = max(1, int(self.args.sample_radius_m / self.map_msg.info.resolution))
+        radius_sq = radius_cells * radius_cells
+        inflation_cells = self.inflation_cells()
+        frontier_cells = set()
+        visited = {start}
+        queue = deque([start])
+        best_free_roam = None
+        best_free_roam_score = -1.0
+
+        while queue and len(visited) < self.args.wfd_max_cells:
+            cell = queue.popleft()
+            if self.is_frontier_with_inflation(cell, inflation_cells):
+                frontier_cells.add(cell)
+            if self.args.free_roam_when_no_frontier and self.is_free_roam_goal(cell, start, min_goal_cells):
+                dist = math.hypot(cell[0] - start[0], cell[1] - start[1])
+                score = dist + self.random.random() * 0.01
+                if score > best_free_roam_score:
+                    best_free_roam = cell
+                    best_free_roam_score = score
+
+            for nb in self.neighbors4(cell):
+                if nb in visited:
+                    continue
+                if (nb[0] - start[0]) ** 2 + (nb[1] - start[1]) ** 2 > radius_sq:
+                    continue
+                if not self.is_safe_free(nb, inflation_cells):
+                    continue
+                visited.add(nb)
+                queue.append(nb)
+
+        best_goal = None
+        best_meta = {}
+        best_score = None
+        for cluster in self.cluster_frontiers(frontier_cells):
+            if len(cluster) < self.args.min_frontier_cluster_cells:
+                continue
+            cx = sum(c[0] for c in cluster) / len(cluster)
+            cy = sum(c[1] for c in cluster) / len(cluster)
+            cluster_candidates = sorted(
+                cluster,
+                key=lambda c: (
+                    (c[0] - start[0]) ** 2 + (c[1] - start[1]) ** 2,
+                    (c[0] - cx) ** 2 + (c[1] - cy) ** 2,
+                ),
+            )[: self.args.frontier_cluster_candidate_limit]
+            for frontier_cell in cluster_candidates:
+                goal_cell, meta = self.frontier_goal_cell(frontier_cell, start, visited)
+                if goal_cell not in visited:
+                    continue
+                if self.near_suppressed_goal(goal_cell):
+                    continue
+                dist_cells = math.hypot(goal_cell[0] - start[0], goal_cell[1] - start[1])
+                if dist_cells < min_goal_cells:
+                    continue
+                score = (
+                    self.args.frontier_size_weight * len(cluster)
+                    - self.args.frontier_distance_weight * dist_cells
+                    + self.random.random() * 0.001
+                )
+                if best_score is None or score > best_score:
+                    best_goal = goal_cell
+                    best_meta = {
+                        **meta,
+                        "frontier_size": len(cluster),
+                        "frontier_id": "%d_%d_%d" % (int(cx), int(cy), len(cluster)),
+                    }
+                    best_score = score
+
+        if best_goal is not None:
+            self.last_goal_meta = best_meta
+            return best_goal, "wfd_frontier"
+        if best_free_roam is not None:
+            self.last_goal_meta = {
+                "candidate_type": "wfd_free_roam",
+                "goal_clearance_m": round(self.clearance_m(best_free_roam), 3),
+            }
+            return best_free_roam, "wfd_free_roam"
+        return None, "wfd_no_frontier"
+
+    def choose_rrt_goal(self, start, min_goal_cells):
+        nodes = [start]
+        node_set = {start}
+        best_free_roam = None
+        best_free_roam_score = -1.0
+        for _ in range(self.args.max_samples):
+            sample = self.sample_free_cell(start)
+            if sample is None:
+                continue
+            nearest = min(nodes, key=lambda c: (c[0] - sample[0]) ** 2 + (c[1] - sample[1]) ** 2)
+            new_cell = self.steer(nearest, sample)
+            if new_cell == nearest or new_cell in node_set:
+                continue
+            if not self.in_bounds(new_cell):
+                continue
+            if not self.segment_free(nearest, new_cell):
+                continue
+            nodes.append(new_cell)
+            node_set.add(new_cell)
+            if self.args.free_roam_when_no_frontier and self.is_free_roam_goal(new_cell, start, min_goal_cells):
+                dist = math.hypot(new_cell[0] - start[0], new_cell[1] - start[1])
+                score = dist + self.random.random() * 0.01
+                if score > best_free_roam_score:
+                    best_free_roam = new_cell
+                    best_free_roam_score = score
+            if self.is_frontier(new_cell):
+                goal_cell, meta = self.frontier_goal_cell(new_cell, start)
+                if self.near_suppressed_goal(goal_cell):
+                    continue
+                d = abs(goal_cell[0] - start[0]) + abs(goal_cell[1] - start[1])
+                if d >= min_goal_cells:
+                    self.last_goal_meta = {
+                        **meta,
+                        "frontier_size": 1,
+                        "frontier_id": "%d_%d_1" % (new_cell[0], new_cell[1]),
+                    }
+                    return goal_cell, "frontier_standoff"
+        if best_free_roam is not None:
+            self.last_goal_meta = {
+                "candidate_type": "free_roam",
+                "goal_clearance_m": round(self.clearance_m(best_free_roam), 3),
+            }
+            return best_free_roam, "free_roam"
+        return None, "no_frontier"
+
     def choose_frontier_goal(self):
+        self.last_goal_meta = {}
         pose = self.robot_pose()
         if pose is None or self.map_msg is None:
             return None, "not_ready"
@@ -269,29 +592,12 @@ class RRTFrontierExplorer(Node):
         if start is None:
             return None, "bad_start"
 
-        nodes = [start]
         min_goal_cells = int(self.args.min_goal_distance_m / self.map_msg.info.resolution)
-        for _ in range(self.args.max_samples):
-            sample = self.sample_free_cell(start)
-            if sample is None:
-                continue
-            nearest = min(nodes, key=lambda c: (c[0] - sample[0]) ** 2 + (c[1] - sample[1]) ** 2)
-            new_cell = self.steer(nearest, sample)
-            if new_cell == nearest or new_cell in nodes:
-                continue
-            if not (0 <= new_cell[0] < self.map_msg.info.width and 0 <= new_cell[1] < self.map_msg.info.height):
-                continue
-            if not self.segment_free(nearest, new_cell):
-                continue
-            nodes.append(new_cell)
-            if self.is_frontier(new_cell):
-                goal_cell = self.frontier_goal_cell(new_cell, start)
-                if self.near_suppressed_goal(goal_cell):
-                    continue
-                d = abs(goal_cell[0] - start[0]) + abs(goal_cell[1] - start[1])
-                if d >= min_goal_cells:
-                    return goal_cell, "frontier_standoff"
-        return None, "no_frontier"
+        if self.args.frontier_mode in ("wfd", "hybrid"):
+            goal, reason = self.choose_wfd_goal(start, min_goal_cells)
+            if goal is not None or self.args.frontier_mode == "wfd":
+                return goal, reason
+        return self.choose_rrt_goal(start, min_goal_cells)
 
     def make_goal(self, cell):
         pose = self.robot_pose()
@@ -316,7 +622,31 @@ class RRTFrontierExplorer(Node):
             return "published_only"
         nav_goal = NavigateToPose.Goal()
         nav_goal.pose = goal
-        send_future = self.nav2_client.send_goal_async(nav_goal)
+        progress = {
+            "feedback_seen": False,
+            "last_distance": None,
+            "last_improved": time.monotonic(),
+        }
+
+        def feedback_cb(msg):
+            feedback = getattr(msg, "feedback", None)
+            distance = getattr(feedback, "distance_remaining", None)
+            if distance is None:
+                return
+            try:
+                distance = float(distance)
+            except (TypeError, ValueError):
+                return
+            if not math.isfinite(distance):
+                return
+            now = time.monotonic()
+            progress["feedback_seen"] = True
+            last_distance = progress["last_distance"]
+            if last_distance is None or distance < last_distance - self.args.goal_progress_epsilon_m:
+                progress["last_distance"] = distance
+                progress["last_improved"] = now
+
+        send_future = self.nav2_client.send_goal_async(nav_goal, feedback_callback=feedback_cb)
         deadline = time.monotonic() + self.args.goal_send_timeout_s
         while rclpy.ok() and not send_future.done() and time.monotonic() < deadline:
             rclpy.spin_once(self, timeout_sec=0.05)
@@ -326,17 +656,33 @@ class RRTFrontierExplorer(Node):
         if handle is None or not handle.accepted:
             return "rejected"
         result_future = handle.get_result_async()
+        accepted_at = time.monotonic()
         deadline = time.monotonic() + self.args.goal_result_timeout_s
         while rclpy.ok() and not result_future.done() and time.monotonic() < deadline:
             rclpy.spin_once(self, timeout_sec=0.1)
             if self.risk_detected:
                 cancel_future = handle.cancel_goal_async()
-                while rclpy.ok() and not cancel_future.done():
+                cancel_deadline = time.monotonic() + self.args.goal_cancel_timeout_s
+                while rclpy.ok() and not cancel_future.done() and time.monotonic() < cancel_deadline:
                     rclpy.spin_once(self, timeout_sec=0.05)
-                    break
                 return "risk_detected"
+            now = time.monotonic()
+            if (
+                self.args.goal_progress_timeout_s > 0
+                and progress["feedback_seen"]
+                and now - accepted_at >= self.args.goal_progress_grace_s
+                and now - progress["last_improved"] >= self.args.goal_progress_timeout_s
+            ):
+                cancel_future = handle.cancel_goal_async()
+                cancel_deadline = time.monotonic() + self.args.goal_cancel_timeout_s
+                while rclpy.ok() and not cancel_future.done() and time.monotonic() < cancel_deadline:
+                    rclpy.spin_once(self, timeout_sec=0.05)
+                return "progress_timeout"
         if not result_future.done():
-            handle.cancel_goal_async()
+            cancel_future = handle.cancel_goal_async()
+            cancel_deadline = time.monotonic() + self.args.goal_cancel_timeout_s
+            while rclpy.ok() and not cancel_future.done() and time.monotonic() < cancel_deadline:
+                rclpy.spin_once(self, timeout_sec=0.05)
             return "result_timeout"
         result = result_future.result()
         return f"status_{getattr(result, 'status', 'unknown')}"
@@ -347,14 +693,47 @@ class RRTFrontierExplorer(Node):
             print("RRT_NOT_READY", flush=True)
             return 2
         print("RRT_READY", flush=True)
+        last_idle_log = 0.0
         while rclpy.ok() and time.monotonic() - started < self.args.runtime_s and self.goal_count < self.args.max_goals:
             rclpy.spin_once(self, timeout_sec=0.1)
             if self.risk_detected:
                 status = "risk_detected"
                 break
+            now = time.monotonic()
+            if now < self.failure_backoff_until:
+                if now - last_idle_log >= self.args.idle_log_period_s:
+                    print(
+                        "RRT_WAIT",
+                        json.dumps(
+                            {
+                                "reason": "failure_backoff",
+                                "goals": self.goal_count,
+                                "time_s": round(now - started, 2),
+                                "remaining_s": round(self.failure_backoff_until - now, 2),
+                            }
+                        ),
+                        flush=True,
+                    )
+                    last_idle_log = now
+                time.sleep(min(self.args.replan_sleep_s, max(0.1, self.failure_backoff_until - now)))
+                continue
             cell, reason = self.choose_frontier_goal()
             if cell is None:
                 status = reason
+                now = time.monotonic()
+                if now - last_idle_log >= self.args.idle_log_period_s:
+                    print(
+                        "RRT_WAIT",
+                        json.dumps(
+                            {
+                                "reason": reason,
+                                "goals": self.goal_count,
+                                "time_s": round(now - started, 2),
+                            }
+                        ),
+                        flush=True,
+                    )
+                    last_idle_log = now
                 time.sleep(self.args.replan_sleep_s)
                 continue
             goal = self.make_goal(cell)
@@ -366,16 +745,41 @@ class RRTFrontierExplorer(Node):
                 "reason": reason,
                 "time_s": round(time.monotonic() - started, 2),
             }
+            record.update(self.last_goal_meta)
             print("RRT_GOAL", json.dumps(record), flush=True)
             self.recent_goal_cells.append(cell)
             nav_status = self.send_goal(goal)
             record["nav_status"] = nav_status
             self.records.append(record)
+            print("RRT_RESULT", json.dumps(record), flush=True)
             if nav_status == "risk_detected":
                 status = nav_status
                 break
             if nav_status not in ("status_4", "published_only"):
+                self.consecutive_failures += 1
                 self.rejected_cells.append(cell)
+                if self.args.rejected_goal_memory > 0:
+                    self.rejected_cells = self.rejected_cells[-self.args.rejected_goal_memory :]
+                if (
+                    self.args.failure_backoff_s > 0
+                    and self.args.failure_backoff_after > 0
+                    and self.consecutive_failures >= self.args.failure_backoff_after
+                ):
+                    self.failure_backoff_until = time.monotonic() + self.args.failure_backoff_s
+                    self.consecutive_failures = 0
+                    print(
+                        "RRT_BACKOFF",
+                        json.dumps(
+                            {
+                                "reason": nav_status,
+                                "sleep_s": self.args.failure_backoff_s,
+                                "goals": self.goal_count,
+                            }
+                        ),
+                        flush=True,
+                    )
+            else:
+                self.consecutive_failures = 0
         else:
             status = "complete"
         summary = {
@@ -407,16 +811,35 @@ def parse_args():
     parser.add_argument("--inflation-m", type=float, default=0.20)
     parser.add_argument("--rrt-step-cells", type=int, default=8)
     parser.add_argument("--max-samples", type=int, default=900)
+    parser.add_argument("--frontier-mode", choices=("rrt", "wfd", "hybrid"), default="hybrid")
+    parser.add_argument("--wfd-max-cells", type=int, default=12000)
+    parser.add_argument("--min-frontier-cluster-cells", type=int, default=2)
+    parser.add_argument("--frontier-cluster-candidate-limit", type=int, default=8)
+    parser.add_argument("--frontier-distance-weight", type=float, default=1.0)
+    parser.add_argument("--frontier-size-weight", type=float, default=0.05)
     parser.add_argument("--free-threshold", type=int, default=20)
     parser.add_argument("--occupied-threshold", type=int, default=65)
     parser.add_argument("--wait-ready-s", type=float, default=35.0)
     parser.add_argument("--goal-send-timeout-s", type=float, default=4.0)
     parser.add_argument("--goal-result-timeout-s", type=float, default=25.0)
+    parser.add_argument("--goal-cancel-timeout-s", type=float, default=2.0)
+    parser.add_argument("--goal-progress-timeout-s", type=float, default=12.0)
+    parser.add_argument("--goal-progress-grace-s", type=float, default=5.0)
+    parser.add_argument("--goal-progress-epsilon-m", type=float, default=0.03)
+    parser.add_argument("--failure-backoff-after", type=int, default=8)
+    parser.add_argument("--failure-backoff-s", type=float, default=5.0)
+    parser.add_argument("--idle-log-period-s", type=float, default=5.0)
     parser.add_argument("--replan-sleep-s", type=float, default=1.0)
     parser.add_argument("--yaw-step-deg", type=float, default=30.0)
     parser.add_argument("--goal-separation-m", type=float, default=0.45)
     parser.add_argument("--recent-goal-memory", type=int, default=24)
+    parser.add_argument("--rejected-goal-memory", type=int, default=80)
+    parser.add_argument("--rejected-goal-separation-m", type=float, default=0.25)
     parser.add_argument("--frontier-standoff-m", type=float, default=0.35)
+    parser.add_argument("--frontier-backoffs-m", default="0.10,0.18,0.25,0.35")
+    parser.add_argument("--goal-clearance-check-m", type=float, default=0.50)
+    parser.add_argument("--free-roam-when-no-frontier", action="store_true")
+    parser.add_argument("--free-roam-min-distance-m", type=float, default=0.25)
     parser.add_argument("--map-edge-margin-m", type=float, default=0.15)
     parser.add_argument("--start-free-search-m", type=float, default=0.35)
     parser.add_argument("--send-nav2-action", action="store_true")

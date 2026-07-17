@@ -25,6 +25,9 @@ source_ros() {
   cd "${REPO_DIR}"
   set +u
   source /opt/ros/humble/setup.bash
+  if [[ -f /home/soc/lslidar_ws/install/setup.bash ]]; then
+    source /home/soc/lslidar_ws/install/setup.bash
+  fi
   source ros2_ws/install/setup.bash
   set -u
 }
@@ -80,7 +83,12 @@ case "${COMMAND}" in
     pkill -f 'tank_base_safe.launch.py' 2>/dev/null || true
     pkill -f 'wheeltec_tank_base_safe.py' 2>/dev/null || true
     pkill -f 'n10p_tank_nav2_slam.launch.py' 2>/dev/null || true
+    pkill -f 'n10p_tank_mapping.launch.py' 2>/dev/null || true
     pkill -f 'n10p_tank_mapping_safety_guard.launch.py' 2>/dev/null || true
+    pkill -f 'scan_safety_guard_node' 2>/dev/null || true
+    pkill -f '/opt/ros/humble/lib/nav2_' 2>/dev/null || true
+    pkill -f '/opt/ros/humble/lib/slam_toolbox' 2>/dev/null || true
+    pkill -f 'lslidar_driver' 2>/dev/null || true
     pkill -f 'realsense2_camera.*rs_launch.py' 2>/dev/null || true
     sleep 2
     pkill -f 'sim_rrt_frontier_explorer.py' 2>/dev/null || true
@@ -104,6 +112,20 @@ case "${COMMAND}" in
     source_ros
     ensure_run_dir
     exec ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
+      front_collision_corridor_half_width_m:="${FRONT_COLLISION_CORRIDOR_HALF_WIDTH_M:-0.26}" \
+      front_collision_min_x_m:="${FRONT_COLLISION_MIN_X_M:-0.02}" \
+      micro_adjust_sector_deg:="${MICRO_ADJUST_SECTOR_DEG:-45.0}" \
+      micro_adjust_trigger_m:="${MICRO_ADJUST_TRIGGER_M:-0.22}" \
+      micro_adjust_clear_m:="${MICRO_ADJUST_CLEAR_M:-0.30}" \
+      micro_adjust_direction_deadband_m:="${MICRO_ADJUST_DIRECTION_DEADBAND_M:-0.03}" \
+      micro_adjust_direction_latch_s:="${MICRO_ADJUST_DIRECTION_LATCH_S:-1.50}" \
+      enable_escape_reverse:="${ENABLE_ESCAPE_REVERSE:-true}" \
+      escape_reverse_trigger_m:="${ESCAPE_REVERSE_TRIGGER_M:-0.16}" \
+      escape_reverse_clear_m:="${ESCAPE_REVERSE_CLEAR_M:-0.24}" \
+      escape_reverse_linear_x:="${ESCAPE_REVERSE_LINEAR_X:--0.08}" \
+      escape_reverse_angular_z:="${ESCAPE_REVERSE_ANGULAR_Z:-0.20}" \
+      escape_reverse_max_s:="${ESCAPE_REVERSE_MAX_S:-0.80}" \
+      escape_reverse_cooldown_s:="${ESCAPE_REVERSE_COOLDOWN_S:-0.40}" \
       hard_stop_m:=0.10 \
       emergency_stop_m:=0.10 \
       slow_down_m:=0.30 \
@@ -123,6 +145,20 @@ case "${COMMAND}" in
     source_ros
     ensure_run_dir
     exec ros2 launch turn_on_wheeltec_robot n10p_tank_nav2_slam.launch.py \
+      front_collision_corridor_half_width_m:="${FRONT_COLLISION_CORRIDOR_HALF_WIDTH_M:-0.26}" \
+      front_collision_min_x_m:="${FRONT_COLLISION_MIN_X_M:-0.02}" \
+      micro_adjust_sector_deg:="${MICRO_ADJUST_SECTOR_DEG:-45.0}" \
+      micro_adjust_trigger_m:="${MICRO_ADJUST_TRIGGER_M:-0.22}" \
+      micro_adjust_clear_m:="${MICRO_ADJUST_CLEAR_M:-0.30}" \
+      micro_adjust_direction_deadband_m:="${MICRO_ADJUST_DIRECTION_DEADBAND_M:-0.03}" \
+      micro_adjust_direction_latch_s:="${MICRO_ADJUST_DIRECTION_LATCH_S:-1.50}" \
+      enable_escape_reverse:="${ENABLE_ESCAPE_REVERSE:-true}" \
+      escape_reverse_trigger_m:="${ESCAPE_REVERSE_TRIGGER_M:-0.16}" \
+      escape_reverse_clear_m:="${ESCAPE_REVERSE_CLEAR_M:-0.24}" \
+      escape_reverse_linear_x:="${ESCAPE_REVERSE_LINEAR_X:--0.08}" \
+      escape_reverse_angular_z:="${ESCAPE_REVERSE_ANGULAR_Z:-0.20}" \
+      escape_reverse_max_s:="${ESCAPE_REVERSE_MAX_S:-0.80}" \
+      escape_reverse_cooldown_s:="${ESCAPE_REVERSE_COOLDOWN_S:-0.40}" \
       hard_stop_m:=0.10 \
       emergency_stop_m:=0.10 \
       slow_down_m:=0.30 \
@@ -153,8 +189,22 @@ case "${COMMAND}" in
       --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.45}" \
       --inflation-m "${RRT_INFLATION_M:-0.25}" \
       --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.35}" \
+      --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
+      --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
+      --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
+      --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
+      --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
+      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
+      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-35}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
+      --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
+      --goal-progress-grace-s "${RRT_GOAL_PROGRESS_GRACE_S:-5}" \
+      --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
+      --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
+      --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
       --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
       --report "${RUN_DIR}/rrt_frontier_preview_report.json"
     ;;
@@ -174,8 +224,22 @@ case "${COMMAND}" in
       --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.45}" \
       --inflation-m "${RRT_INFLATION_M:-0.25}" \
       --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.35}" \
+      --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
+      --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
+      --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
+      --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
+      --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
+      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
+      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-35}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
+      --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
+      --goal-progress-grace-s "${RRT_GOAL_PROGRESS_GRACE_S:-5}" \
+      --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
+      --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
+      --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
       --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
       --send-nav2-action \
       --report "${RUN_DIR}/rrt_frontier_nav2_report.json"
@@ -192,14 +256,28 @@ case "${COMMAND}" in
       --base-frame base_footprint \
       --runtime-s "${RRT_RUNTIME_S:-120}" \
       --max-goals "${RRT_MAX_GOALS:-6}" \
-      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.25}" \
+      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.00}" \
       --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.20}" \
-      --inflation-m "${RRT_INFLATION_M:-0.24}" \
-      --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.30}" \
-      --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.30}" \
-      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.16}" \
+      --inflation-m "${RRT_INFLATION_M:-0.12}" \
+      --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.10}" \
+      --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.12}" \
+      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.15}" \
+      --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
+      --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
+      --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
+      --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
+      --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
+      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
+      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-25}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
+      --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
+      --goal-progress-grace-s "${RRT_GOAL_PROGRESS_GRACE_S:-5}" \
+      --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
+      --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
+      --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
       --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
       --report "${RUN_DIR}/rrt_frontier_preview_2m_report.json"
     ;;
@@ -215,14 +293,28 @@ case "${COMMAND}" in
       --base-frame base_footprint \
       --runtime-s "${RRT_RUNTIME_S:-120}" \
       --max-goals "${RRT_MAX_GOALS:-4}" \
-      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.25}" \
+      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.00}" \
       --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.20}" \
-      --inflation-m "${RRT_INFLATION_M:-0.24}" \
-      --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.30}" \
-      --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.30}" \
-      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.16}" \
+      --inflation-m "${RRT_INFLATION_M:-0.12}" \
+      --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.10}" \
+      --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.12}" \
+      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.15}" \
+      --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
+      --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
+      --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
+      --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
+      --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
+      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
+      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-25}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
+      --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
+      --goal-progress-grace-s "${RRT_GOAL_PROGRESS_GRACE_S:-5}" \
+      --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
+      --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
+      --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
       --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
       --send-nav2-action \
       --report "${RUN_DIR}/rrt_frontier_nav2_2m_report.json"
@@ -239,14 +331,32 @@ case "${COMMAND}" in
       --base-frame base_footprint \
       --runtime-s "${RRT_RUNTIME_S:-86400}" \
       --max-goals "${RRT_MAX_GOALS:-1000000}" \
-      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.25}" \
+      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.00}" \
       --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.20}" \
-      --inflation-m "${RRT_INFLATION_M:-0.24}" \
-      --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.30}" \
-      --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.30}" \
-      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.16}" \
+      --inflation-m "${RRT_INFLATION_M:-0.12}" \
+      --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.10}" \
+      --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.12}" \
+      --recent-goal-memory "${RRT_RECENT_GOAL_MEMORY:-8}" \
+      --rejected-goal-memory "${RRT_REJECTED_GOAL_MEMORY:-60}" \
+      --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
+      --free-roam-when-no-frontier \
+      --free-roam-min-distance-m "${RRT_FREE_ROAM_MIN_DISTANCE_M:-0.20}" \
+      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.15}" \
+      --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
+      --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
+      --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
+      --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
+      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
+      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-25}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
+      --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
+      --goal-progress-grace-s "${RRT_GOAL_PROGRESS_GRACE_S:-5}" \
+      --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
+      --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
+      --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
       --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
       --send-nav2-action \
       --report "${RUN_DIR}/rrt_frontier_nav2_2m_unlimited_report.json"

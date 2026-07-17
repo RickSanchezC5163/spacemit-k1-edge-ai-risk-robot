@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
@@ -22,6 +23,23 @@ class ScanSafetyGuardNode(Node):
         self.declare_parameter("event_topic", "/perception/mock_event")
         self.declare_parameter("stop_request_topic", "/chassis/stop_request")
         self.declare_parameter("front_sector_deg", 35.0)
+        self.declare_parameter("front_collision_corridor_half_width_m", 0.26)
+        self.declare_parameter("front_collision_min_x_m", 0.02)
+        self.declare_parameter("micro_adjust_sector_deg", 45.0)
+        self.declare_parameter("micro_adjust_trigger_m", 0.22)
+        self.declare_parameter("micro_adjust_clear_m", 0.30)
+        self.declare_parameter("micro_adjust_min_valid_range_m", 0.01)
+        self.declare_parameter("micro_adjust_angular_z", 0.22)
+        self.declare_parameter("micro_adjust_direction_deadband_m", 0.03)
+        self.declare_parameter("micro_adjust_direction_latch_s", 1.50)
+        self.declare_parameter("enable_micro_adjust", True)
+        self.declare_parameter("enable_escape_reverse", True)
+        self.declare_parameter("escape_reverse_trigger_m", 0.16)
+        self.declare_parameter("escape_reverse_clear_m", 0.24)
+        self.declare_parameter("escape_reverse_linear_x", -0.08)
+        self.declare_parameter("escape_reverse_angular_z", 0.20)
+        self.declare_parameter("escape_reverse_max_s", 0.80)
+        self.declare_parameter("escape_reverse_cooldown_s", 0.40)
         self.declare_parameter("hard_stop_m", 1.00)
         self.declare_parameter("slow_down_m", 1.60)
         self.declare_parameter("slow_clear_m", 1.75)
@@ -51,6 +69,41 @@ class ScanSafetyGuardNode(Node):
         self.event_topic = str(self.get_parameter("event_topic").value)
         self.stop_request_topic = str(self.get_parameter("stop_request_topic").value)
         self.front_sector_deg = float(self.get_parameter("front_sector_deg").value)
+        self.front_collision_corridor_half_width_m = float(
+            self.get_parameter("front_collision_corridor_half_width_m").value
+        )
+        self.front_collision_min_x_m = float(
+            self.get_parameter("front_collision_min_x_m").value
+        )
+        self.micro_adjust_sector_deg = float(self.get_parameter("micro_adjust_sector_deg").value)
+        self.micro_adjust_trigger_m = float(self.get_parameter("micro_adjust_trigger_m").value)
+        self.micro_adjust_clear_m = float(self.get_parameter("micro_adjust_clear_m").value)
+        self.micro_adjust_min_valid_range_m = float(
+            self.get_parameter("micro_adjust_min_valid_range_m").value
+        )
+        self.micro_adjust_angular_z = float(self.get_parameter("micro_adjust_angular_z").value)
+        self.micro_adjust_direction_deadband_m = float(
+            self.get_parameter("micro_adjust_direction_deadband_m").value
+        )
+        self.micro_adjust_direction_latch_s = float(
+            self.get_parameter("micro_adjust_direction_latch_s").value
+        )
+        self.enable_micro_adjust = self._param_bool(
+            self.get_parameter("enable_micro_adjust").value
+        )
+        self.enable_escape_reverse = self._param_bool(
+            self.get_parameter("enable_escape_reverse").value
+        )
+        self.escape_reverse_trigger_m = float(
+            self.get_parameter("escape_reverse_trigger_m").value
+        )
+        self.escape_reverse_clear_m = float(self.get_parameter("escape_reverse_clear_m").value)
+        self.escape_reverse_linear_x = float(self.get_parameter("escape_reverse_linear_x").value)
+        self.escape_reverse_angular_z = float(self.get_parameter("escape_reverse_angular_z").value)
+        self.escape_reverse_max_s = float(self.get_parameter("escape_reverse_max_s").value)
+        self.escape_reverse_cooldown_s = float(
+            self.get_parameter("escape_reverse_cooldown_s").value
+        )
         self.hard_stop_m = float(self.get_parameter("hard_stop_m").value)
         self.slow_down_m = float(self.get_parameter("slow_down_m").value)
         self.slow_clear_m = float(self.get_parameter("slow_clear_m").value)
@@ -89,11 +142,22 @@ class ScanSafetyGuardNode(Node):
         self.front_min = None
         self.front_p10 = None
         self.front_valid_count = 0
+        self.corridor_front_min = None
+        self.corridor_front_p10 = None
+        self.corridor_front_valid_count = 0
+        self.micro_front_min = None
+        self.micro_left_min = None
+        self.micro_right_min = None
         self.prev_front_p10 = None
         self.prev_front_time = 0.0
         self.approach_rate_mps = 0.0
         self.ttc_s = math.inf
         self.hard_stop_latch_until = 0.0
+        self.micro_adjust_turn_sign = 1.0
+        self.micro_adjust_turn_latch_until = 0.0
+        self.escape_reverse_until = 0.0
+        self.escape_reverse_cooldown_until = 0.0
+        self.escape_reverse_turn_sign = 1.0
         self.state = "stale_scan" if self.fail_closed_without_scan else "clear"
         self.last_logged_state = self.state
         self.last_status_json = None
@@ -102,15 +166,18 @@ class ScanSafetyGuardNode(Node):
         self.last_diagnostic_log_time = 0.0
         self.last_stop_request_time = 0.0
         self.hard_stop_stop_request_sent = False
+        self.add_on_set_parameters_callback(self._on_parameters)
 
         self.get_logger().info(
-            "Scan safety guard: %s -> %s using %s, hard<%.2fm, slow<%.2fm"
+            "Scan safety guard: %s -> %s using %s, hard<%.2fm, slow<%.2fm, micro<=%.2fm/%gdeg"
             % (
                 self.input_cmd_topic,
                 self.output_cmd_topic,
                 self.scan_topic,
                 self.hard_stop_m,
                 self.slow_down_m,
+                self.micro_adjust_trigger_m,
+                self.micro_adjust_sector_deg,
             )
         )
 
@@ -119,6 +186,73 @@ class ScanSafetyGuardNode(Node):
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+    def _on_parameters(self, parameters):
+        try:
+            for param in parameters:
+                name = param.name
+                value = param.value
+                if name == "front_collision_corridor_half_width_m":
+                    self.front_collision_corridor_half_width_m = float(value)
+                elif name == "front_collision_min_x_m":
+                    self.front_collision_min_x_m = float(value)
+                elif name == "micro_adjust_sector_deg":
+                    self.micro_adjust_sector_deg = float(value)
+                elif name == "micro_adjust_trigger_m":
+                    self.micro_adjust_trigger_m = float(value)
+                elif name == "micro_adjust_clear_m":
+                    self.micro_adjust_clear_m = float(value)
+                elif name == "micro_adjust_min_valid_range_m":
+                    self.micro_adjust_min_valid_range_m = float(value)
+                elif name == "micro_adjust_angular_z":
+                    self.micro_adjust_angular_z = float(value)
+                elif name == "micro_adjust_direction_deadband_m":
+                    self.micro_adjust_direction_deadband_m = float(value)
+                elif name == "micro_adjust_direction_latch_s":
+                    self.micro_adjust_direction_latch_s = float(value)
+                elif name == "enable_micro_adjust":
+                    self.enable_micro_adjust = self._param_bool(value)
+                elif name == "enable_escape_reverse":
+                    self.enable_escape_reverse = self._param_bool(value)
+                elif name == "escape_reverse_trigger_m":
+                    self.escape_reverse_trigger_m = float(value)
+                elif name == "escape_reverse_clear_m":
+                    self.escape_reverse_clear_m = float(value)
+                elif name == "escape_reverse_linear_x":
+                    self.escape_reverse_linear_x = float(value)
+                elif name == "escape_reverse_angular_z":
+                    self.escape_reverse_angular_z = float(value)
+                elif name == "escape_reverse_max_s":
+                    self.escape_reverse_max_s = float(value)
+                elif name == "escape_reverse_cooldown_s":
+                    self.escape_reverse_cooldown_s = float(value)
+                elif name == "hard_stop_m":
+                    self.hard_stop_m = float(value)
+                elif name == "slow_down_m":
+                    self.slow_down_m = float(value)
+                elif name == "slow_clear_m":
+                    self.slow_clear_m = float(value)
+                elif name == "emergency_stop_m":
+                    self.emergency_stop_m = float(value)
+                elif name == "soft_max_linear":
+                    self.soft_max_linear = float(value)
+                elif name == "clear_max_linear":
+                    self.clear_max_linear = float(value)
+                elif name == "min_effective_forward":
+                    self.min_effective_forward = float(value)
+                elif name == "approach_stop_m":
+                    self.approach_stop_m = float(value)
+                elif name == "approach_rate_stop_mps":
+                    self.approach_rate_stop_mps = float(value)
+                elif name == "ttc_stop_s":
+                    self.ttc_stop_s = float(value)
+                elif name == "enable_dynamic_stop":
+                    self.enable_dynamic_stop = self._param_bool(value)
+                elif name == "hard_stop_latch_s":
+                    self.hard_stop_latch_s = float(value)
+            return SetParametersResult(successful=True)
+        except Exception as exc:
+            return SetParametersResult(successful=False, reason=str(exc))
 
     def _cmd_cb(self, msg: Twist) -> None:
         self.last_cmd = msg
@@ -131,7 +265,13 @@ class ScanSafetyGuardNode(Node):
             self.front_min = stats["front_min"]
             self.front_p10 = stats["front_p10"]
             self.front_valid_count = stats["valid_count"]
-            self._update_approach_rate(self.front_p10, now)
+            self.corridor_front_min = stats["corridor_front_min"]
+            self.corridor_front_p10 = stats["corridor_front_p10"]
+            self.corridor_front_valid_count = stats["corridor_valid_count"]
+            self.micro_front_min = stats["micro_front_min"]
+            self.micro_left_min = stats["micro_left_min"]
+            self.micro_right_min = stats["micro_right_min"]
+            self._update_approach_rate(self.corridor_front_p10, now)
             self._update_ttc()
             self.last_scan_time = now
             self._update_state(now)
@@ -161,17 +301,27 @@ class ScanSafetyGuardNode(Node):
         result.angular.y = float(source.angular.y)
         result.angular.z = float(source.angular.z)
 
+        motion_requested = abs(result.linear.x) > 1e-6 or abs(result.angular.z) > 1e-6
+
         if not scan_fresh and self.fail_closed_without_scan:
-            if result.linear.x > 0.0:
+            if motion_requested:
                 self._publish_stop_request(now, "stale_scan", source)
             return Twist(), "stale_scan_zero"
 
-        if self.state == "hard_stop" and result.linear.x > 0.0:
+        if self.state == "hard_stop" and motion_requested:
             if not self.hard_stop_stop_request_sent:
                 self._publish_stop_request(now, "hard_stop", source)
                 self.hard_stop_stop_request_sent = True
                 return Twist(), "hard_stop_stop_request"
             return Twist(), "hard_stop_latched_zero"
+
+        if self.state == "escape_reverse":
+            action = "escape_reverse" if motion_requested else "escape_reverse_autonomous"
+            return self._escape_reverse_cmd(source), action
+
+        if self.state == "micro_adjust":
+            action = "micro_adjust_rotate" if motion_requested else "micro_adjust_autonomous_rotate"
+            return self._micro_adjust_cmd(result), action
 
         if result.linear.x > 0.0:
             if result.linear.x < self.min_effective_forward:
@@ -197,6 +347,22 @@ class ScanSafetyGuardNode(Node):
             "front_min_range_m": None if self.front_min is None else round(float(self.front_min), 3),
             "front_p10_range_m": None if self.front_p10 is None else round(float(self.front_p10), 3),
             "front_valid_count": int(self.front_valid_count),
+            "corridor_front_min_m": (
+                None if self.corridor_front_min is None else round(float(self.corridor_front_min), 3)
+            ),
+            "corridor_front_p10_m": (
+                None if self.corridor_front_p10 is None else round(float(self.corridor_front_p10), 3)
+            ),
+            "corridor_front_valid_count": int(self.corridor_front_valid_count),
+            "micro_front_min_range_m": (
+                None if self.micro_front_min is None else round(float(self.micro_front_min), 3)
+            ),
+            "micro_left_min_range_m": (
+                None if self.micro_left_min is None else round(float(self.micro_left_min), 3)
+            ),
+            "micro_right_min_range_m": (
+                None if self.micro_right_min is None else round(float(self.micro_right_min), 3)
+            ),
             "approach_rate_mps": round(float(self.approach_rate_mps), 3),
             "ttc_s": None if math.isinf(self.ttc_s) else round(float(self.ttc_s), 3),
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -207,18 +373,30 @@ class ScanSafetyGuardNode(Node):
         self.last_stop_request_time = now
 
     def _forward_limit(self) -> float:
-        if self.front_min is None:
+        if self.front_min is None and self.corridor_front_min is None:
             return self.clear_max_linear
         if self._hard_condition():
             return 0.0
-        if self.state == "warning":
+        if self.state in ("warning", "micro_adjust", "escape_reverse"):
             return self.soft_max_linear
         return self.clear_max_linear
 
     def _update_state(self, now: float) -> None:
-        if self.front_valid_count < self.min_front_valid_count or self.front_p10 is None:
-            return
         old_state = self.state
+        if self._escape_reverse_condition(now):
+            self.state = "escape_reverse"
+            self.hard_stop_stop_request_sent = False
+            if self.state != old_state:
+                self._log_state_transition("escape_reverse")
+            return
+
+        if self._micro_adjust_condition():
+            self.state = "micro_adjust"
+            self.hard_stop_stop_request_sent = False
+            if self.state != old_state:
+                self._log_state_transition("micro_adjust")
+            return
+
         if self._hard_condition():
             if old_state != "hard_stop":
                 self.hard_stop_stop_request_sent = False
@@ -230,12 +408,23 @@ class ScanSafetyGuardNode(Node):
                 self._log_state_transition("hard_condition")
             return
 
+        if self.front_valid_count < self.min_front_valid_count or self.front_p10 is None:
+            return
+
         if self.state == "hard_stop":
             if now < self.hard_stop_latch_until:
                 self._log_state_transition("latched")
                 return
             self.state = "warning" if self.front_p10 < self.slow_clear_m else "clear"
             self.hard_stop_stop_request_sent = False
+            self._log_state_transition("scan")
+            return
+        if self.state == "micro_adjust":
+            self.state = "warning" if self.front_p10 < self.slow_clear_m else "clear"
+            self._log_state_transition("scan")
+            return
+        if self.state == "escape_reverse":
+            self.state = "warning" if self.front_p10 < self.slow_clear_m else "clear"
             self._log_state_transition("scan")
             return
         if self.front_p10 < self.slow_down_m:
@@ -246,11 +435,14 @@ class ScanSafetyGuardNode(Node):
             self._log_state_transition("scan")
 
     def _hard_condition(self) -> bool:
-        if self.front_min is not None and self.front_min <= self.emergency_stop_m:
+        if self.corridor_front_min is not None and self.corridor_front_min <= self.emergency_stop_m:
             return True
-        if self.front_p10 is None or self.front_valid_count < self.min_front_valid_count:
+        if (
+            self.corridor_front_p10 is None
+            or self.corridor_front_valid_count < self.min_front_valid_count
+        ):
             return False
-        if self.front_p10 <= self.hard_stop_m:
+        if self.corridor_front_p10 <= self.hard_stop_m:
             return True
         if not self.enable_dynamic_stop:
             return False
@@ -258,7 +450,7 @@ class ScanSafetyGuardNode(Node):
             time.monotonic() - self.last_cmd_time <= self.cmd_timeout_s
             and float(self.last_cmd.linear.x) > 0.0
         )
-        inside_approach_zone = self.front_p10 < self.approach_stop_m
+        inside_approach_zone = self.corridor_front_p10 < self.approach_stop_m
         if (
             forward_cmd_active
             and inside_approach_zone
@@ -268,6 +460,81 @@ class ScanSafetyGuardNode(Node):
         if forward_cmd_active and inside_approach_zone and self.ttc_s < self.ttc_stop_s:
             return True
         return False
+
+    def _micro_adjust_condition(self) -> bool:
+        if not self.enable_micro_adjust:
+            return False
+        candidates = [self.micro_front_min, self.micro_left_min, self.micro_right_min]
+        threshold = self.micro_adjust_trigger_m
+        if self.state == "micro_adjust":
+            threshold = max(threshold, self.micro_adjust_clear_m)
+        return any(value is not None and value <= threshold for value in candidates)
+
+    def _escape_reverse_condition(self, now: float) -> bool:
+        if not self.enable_escape_reverse:
+            return False
+        candidates = [self.micro_front_min, self.micro_left_min, self.micro_right_min]
+        if self.state == "escape_reverse":
+            if now >= self.escape_reverse_until:
+                return False
+            threshold = max(self.escape_reverse_trigger_m, self.escape_reverse_clear_m)
+            return any(value is not None and value <= threshold for value in candidates)
+
+        if now < self.escape_reverse_cooldown_until:
+            return False
+        if not any(
+            value is not None and value <= self.escape_reverse_trigger_m
+            for value in candidates
+        ):
+            return False
+
+        self.escape_reverse_until = now + max(0.0, self.escape_reverse_max_s)
+        self.escape_reverse_cooldown_until = (
+            self.escape_reverse_until + max(0.0, self.escape_reverse_cooldown_s)
+        )
+        self.escape_reverse_turn_sign = self._micro_adjust_turn_direction()
+        return True
+
+    def _escape_reverse_cmd(self, source: Twist) -> Twist:
+        result = Twist()
+        result.linear.x = -abs(self.escape_reverse_linear_x)
+        self.escape_reverse_turn_sign = self._micro_adjust_turn_direction()
+        result.angular.z = self.escape_reverse_turn_sign * abs(self.escape_reverse_angular_z)
+        return result
+
+    def _micro_adjust_cmd(self, source: Twist) -> Twist:
+        result = Twist()
+        turn = self._micro_adjust_turn_direction(float(source.angular.z))
+        result.angular.z = turn * abs(self.micro_adjust_angular_z)
+        return result
+
+    def _micro_adjust_turn_direction(self, current_angular_z: float = 0.0) -> float:
+        now = time.monotonic()
+        left = self.micro_left_min
+        right = self.micro_right_min
+        deadband = max(0.0, self.micro_adjust_direction_deadband_m)
+        left_close = left is not None and left <= self.micro_adjust_trigger_m
+        right_close = right is not None and right <= self.micro_adjust_trigger_m
+
+        turn = None
+        if left_close and not right_close:
+            turn = -1.0
+        elif right_close and not left_close:
+            turn = 1.0
+        elif left_close and right_close and abs(left - right) >= deadband:
+            turn = -1.0 if left < right else 1.0
+        elif now < self.micro_adjust_turn_latch_until:
+            turn = self.micro_adjust_turn_sign
+        elif abs(current_angular_z) > 1e-3:
+            turn = 1.0 if current_angular_z > 0.0 else -1.0
+        elif left is not None and right is not None and abs(left - right) >= deadband:
+            turn = -1.0 if left < right else 1.0
+        else:
+            turn = self.micro_adjust_turn_sign
+
+        self.micro_adjust_turn_sign = turn
+        self.micro_adjust_turn_latch_until = now + max(0.0, self.micro_adjust_direction_latch_s)
+        return turn
 
     def _update_approach_rate(self, new_front_p10, now: float) -> None:
         if new_front_p10 is None:
@@ -281,18 +548,21 @@ class ScanSafetyGuardNode(Node):
         self.prev_front_time = now
 
     def _update_ttc(self) -> None:
-        if self.front_p10 is None or self.approach_rate_mps <= 1e-6:
+        if self.corridor_front_p10 is None or self.approach_rate_mps <= 1e-6:
             self.ttc_s = math.inf
             return
-        self.ttc_s = self.front_p10 / self.approach_rate_mps
+        self.ttc_s = self.corridor_front_p10 / self.approach_rate_mps
 
     def _log_state_transition(self, reason: str) -> None:
         if self.state == self.last_logged_state:
             return
         front_min_text = "none" if self.front_min is None else f"{self.front_min:.3f}m"
         front_p10_text = "none" if self.front_p10 is None else f"{self.front_p10:.3f}m"
+        corridor_p10_text = (
+            "none" if self.corridor_front_p10 is None else f"{self.corridor_front_p10:.3f}m"
+        )
         self.get_logger().info(
-            "guard_state %s -> %s reason=%s front_min=%s front_p10=%s "
+            "guard_state %s -> %s reason=%s front_min=%s front_p10=%s corridor_p10=%s "
             "valid_count=%d approach_rate=%.3fm/s ttc=%s latch_remaining=%.3fs"
             % (
                 self.last_logged_state,
@@ -300,6 +570,7 @@ class ScanSafetyGuardNode(Node):
                 reason,
                 front_min_text,
                 front_p10_text,
+                corridor_p10_text,
                 self.front_valid_count,
                 self.approach_rate_mps,
                 self._format_ttc(),
@@ -314,15 +585,26 @@ class ScanSafetyGuardNode(Node):
         self.last_diagnostic_log_time = now
         self.get_logger().info(
             "guard_status state=%s front_min=%s front_p10=%s valid_count=%d "
-            "approach_rate=%.3fm/s ttc=%s latch_remaining=%.3fs"
+            "corridor_min=%s corridor_p10=%s corridor_count=%d "
+            "micro_front=%s micro_left=%s micro_right=%s "
+            "approach_rate=%.3fm/s ttc=%s latch_remaining=%.3fs "
+            "micro_turn=%+.0f escape_remaining=%.3fs"
             % (
                 self.state,
                 "none" if self.front_min is None else f"{self.front_min:.3f}m",
                 "none" if self.front_p10 is None else f"{self.front_p10:.3f}m",
                 self.front_valid_count,
+                "none" if self.corridor_front_min is None else f"{self.corridor_front_min:.3f}m",
+                "none" if self.corridor_front_p10 is None else f"{self.corridor_front_p10:.3f}m",
+                self.corridor_front_valid_count,
+                "none" if self.micro_front_min is None else f"{self.micro_front_min:.3f}m",
+                "none" if self.micro_left_min is None else f"{self.micro_left_min:.3f}m",
+                "none" if self.micro_right_min is None else f"{self.micro_right_min:.3f}m",
                 self.approach_rate_mps,
                 self._format_ttc(),
                 self._latch_remaining(),
+                self.micro_adjust_turn_sign,
+                max(0.0, self.escape_reverse_until - time.monotonic()),
             )
         )
 
@@ -339,6 +621,44 @@ class ScanSafetyGuardNode(Node):
             "front_min_range_m": None if self.front_min is None else round(float(self.front_min), 3),
             "front_p10_range_m": None if self.front_p10 is None else round(float(self.front_p10), 3),
             "front_valid_count": int(self.front_valid_count),
+            "corridor_front_min_m": (
+                None if self.corridor_front_min is None else round(float(self.corridor_front_min), 3)
+            ),
+            "corridor_front_p10_m": (
+                None if self.corridor_front_p10 is None else round(float(self.corridor_front_p10), 3)
+            ),
+            "corridor_front_valid_count": int(self.corridor_front_valid_count),
+            "front_collision_corridor_half_width_m": self.front_collision_corridor_half_width_m,
+            "front_collision_min_x_m": self.front_collision_min_x_m,
+            "micro_front_min_range_m": (
+                None if self.micro_front_min is None else round(float(self.micro_front_min), 3)
+            ),
+            "micro_left_min_range_m": (
+                None if self.micro_left_min is None else round(float(self.micro_left_min), 3)
+            ),
+            "micro_right_min_range_m": (
+                None if self.micro_right_min is None else round(float(self.micro_right_min), 3)
+            ),
+            "micro_adjust_sector_deg": self.micro_adjust_sector_deg,
+            "micro_adjust_trigger_m": self.micro_adjust_trigger_m,
+            "micro_adjust_clear_m": self.micro_adjust_clear_m,
+            "micro_adjust_angular_z": self.micro_adjust_angular_z,
+            "micro_adjust_turn_sign": self.micro_adjust_turn_sign,
+            "micro_adjust_direction_deadband_m": self.micro_adjust_direction_deadband_m,
+            "micro_adjust_direction_latch_s": self.micro_adjust_direction_latch_s,
+            "enable_micro_adjust": self.enable_micro_adjust,
+            "enable_escape_reverse": self.enable_escape_reverse,
+            "escape_reverse_trigger_m": self.escape_reverse_trigger_m,
+            "escape_reverse_clear_m": self.escape_reverse_clear_m,
+            "escape_reverse_linear_x": self.escape_reverse_linear_x,
+            "escape_reverse_angular_z": self.escape_reverse_angular_z,
+            "escape_reverse_turn_sign": self.escape_reverse_turn_sign,
+            "escape_reverse_remaining_s": round(
+                max(0.0, self.escape_reverse_until - time.monotonic()), 3
+            ),
+            "escape_reverse_cooldown_remaining_s": round(
+                max(0.0, self.escape_reverse_cooldown_until - time.monotonic()), 3
+            ),
             "scan_fresh": bool(scan_fresh),
             "cmd_fresh": bool(cmd_fresh),
             "hard_stop_m": self.hard_stop_m,
@@ -365,7 +685,7 @@ class ScanSafetyGuardNode(Node):
 
         if not self.publish_events or now - self.last_event_time < self.event_period_s:
             return
-        if self.state not in ("hard_stop", "warning"):
+        if self.state not in ("hard_stop", "warning", "micro_adjust", "escape_reverse"):
             return
 
         event_type = "blocked_path" if self.state == "hard_stop" else "soft_obstacle"
@@ -377,6 +697,32 @@ class ScanSafetyGuardNode(Node):
             "front_min_range_m": None if self.front_min is None else round(float(self.front_min), 3),
             "front_p10_range_m": None if self.front_p10 is None else round(float(self.front_p10), 3),
             "front_valid_count": int(self.front_valid_count),
+            "corridor_front_min_m": (
+                None if self.corridor_front_min is None else round(float(self.corridor_front_min), 3)
+            ),
+            "corridor_front_p10_m": (
+                None if self.corridor_front_p10 is None else round(float(self.corridor_front_p10), 3)
+            ),
+            "corridor_front_valid_count": int(self.corridor_front_valid_count),
+            "micro_front_min_range_m": (
+                None if self.micro_front_min is None else round(float(self.micro_front_min), 3)
+            ),
+            "micro_left_min_range_m": (
+                None if self.micro_left_min is None else round(float(self.micro_left_min), 3)
+            ),
+            "micro_right_min_range_m": (
+                None if self.micro_right_min is None else round(float(self.micro_right_min), 3)
+            ),
+            "micro_adjust_sector_deg": self.micro_adjust_sector_deg,
+            "micro_adjust_trigger_m": self.micro_adjust_trigger_m,
+            "micro_adjust_clear_m": self.micro_adjust_clear_m,
+            "micro_adjust_angular_z": self.micro_adjust_angular_z,
+            "micro_adjust_turn_sign": self.micro_adjust_turn_sign,
+            "escape_reverse_trigger_m": self.escape_reverse_trigger_m,
+            "escape_reverse_clear_m": self.escape_reverse_clear_m,
+            "escape_reverse_linear_x": self.escape_reverse_linear_x,
+            "escape_reverse_angular_z": self.escape_reverse_angular_z,
+            "escape_reverse_turn_sign": self.escape_reverse_turn_sign,
             "front_sector_deg": self.front_sector_deg,
             "guard_action": action,
             "ttc_s": None if math.isinf(self.ttc_s) else round(float(self.ttc_s), 3),
@@ -389,30 +735,91 @@ class ScanSafetyGuardNode(Node):
 
     def _front_stats(self, scan: LaserScan):
         if not scan.ranges:
-            return {"front_min": None, "front_p10": None, "valid_count": 0}
+            return {
+                "front_min": None,
+                "front_p10": None,
+                "valid_count": 0,
+                "corridor_front_min": None,
+                "corridor_front_p10": None,
+                "corridor_valid_count": 0,
+                "micro_front_min": None,
+                "micro_left_min": None,
+                "micro_right_min": None,
+            }
         if not math.isfinite(scan.angle_increment) or abs(scan.angle_increment) < 1e-9:
             raise ValueError("LaserScan angle_increment is zero or invalid")
 
         half_sector_rad = math.radians(max(self.front_sector_deg, 0.0) / 2.0)
+        micro_half_rad = math.radians(max(self.micro_adjust_sector_deg, 0.0))
         front_values = []
+        micro_front_values = []
+        micro_left_values = []
+        micro_right_values = []
+        corridor_values = []
         for index, value in enumerate(scan.ranges):
             if not math.isfinite(value):
                 continue
             value_f = float(value)
-            if value_f < self.min_valid_range_m or value_f > self.max_valid_range_m:
+            if value_f <= 0.0 or value_f > self.max_valid_range_m:
                 continue
             angle = scan.angle_min + index * scan.angle_increment
-            if abs(self._normalize_angle(angle)) <= half_sector_rad:
+            angle = self._normalize_angle(angle)
+            if value_f >= self.min_valid_range_m and abs(angle) <= half_sector_rad:
                 front_values.append(value_f)
+            if value_f >= self.min_valid_range_m:
+                x_forward = value_f * math.cos(angle)
+                y_lateral = value_f * math.sin(angle)
+                if (
+                    x_forward >= self.front_collision_min_x_m
+                    and abs(y_lateral) <= self.front_collision_corridor_half_width_m
+                ):
+                    corridor_values.append(x_forward)
+            if value_f >= self.micro_adjust_min_valid_range_m:
+                if abs(angle) <= micro_half_rad:
+                    micro_front_values.append(value_f)
+                if 0.0 < angle <= micro_half_rad:
+                    micro_left_values.append(value_f)
+                if -micro_half_rad <= angle < 0.0:
+                    micro_right_values.append(value_f)
+        result = {
+            "micro_front_min": min(micro_front_values) if micro_front_values else None,
+            "micro_left_min": min(micro_left_values) if micro_left_values else None,
+            "micro_right_min": min(micro_right_values) if micro_right_values else None,
+        }
+        if corridor_values:
+            corridor_values.sort()
+            corridor_p10_index = max(
+                0,
+                min(len(corridor_values) - 1, math.ceil(len(corridor_values) * 0.10) - 1),
+            )
+            result.update(
+                {
+                    "corridor_front_min": corridor_values[0],
+                    "corridor_front_p10": corridor_values[corridor_p10_index],
+                    "corridor_valid_count": len(corridor_values),
+                }
+            )
+        else:
+            result.update(
+                {
+                    "corridor_front_min": None,
+                    "corridor_front_p10": None,
+                    "corridor_valid_count": 0,
+                }
+            )
         if not front_values:
-            return {"front_min": None, "front_p10": None, "valid_count": 0}
+            result.update({"front_min": None, "front_p10": None, "valid_count": 0})
+            return result
         front_values.sort()
         p10_index = max(0, min(len(front_values) - 1, math.ceil(len(front_values) * 0.10) - 1))
-        return {
-            "front_min": front_values[0],
-            "front_p10": front_values[p10_index],
-            "valid_count": len(front_values),
-        }
+        result.update(
+            {
+                "front_min": front_values[0],
+                "front_p10": front_values[p10_index],
+                "valid_count": len(front_values),
+            }
+        )
+        return result
 
     @staticmethod
     def _normalize_angle(angle: float) -> float:

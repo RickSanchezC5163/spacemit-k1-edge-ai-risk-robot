@@ -12,6 +12,22 @@ def generate_launch_description():
     guarded_cmd_vel = LaunchConfiguration("guarded_cmd_vel")
     stop_request_topic = LaunchConfiguration("stop_request_topic")
     front_sector_deg = LaunchConfiguration("front_sector_deg")
+    front_collision_corridor_half_width_m = LaunchConfiguration(
+        "front_collision_corridor_half_width_m"
+    )
+    front_collision_min_x_m = LaunchConfiguration("front_collision_min_x_m")
+    micro_adjust_sector_deg = LaunchConfiguration("micro_adjust_sector_deg")
+    micro_adjust_trigger_m = LaunchConfiguration("micro_adjust_trigger_m")
+    micro_adjust_clear_m = LaunchConfiguration("micro_adjust_clear_m")
+    micro_adjust_direction_deadband_m = LaunchConfiguration("micro_adjust_direction_deadband_m")
+    micro_adjust_direction_latch_s = LaunchConfiguration("micro_adjust_direction_latch_s")
+    enable_escape_reverse = LaunchConfiguration("enable_escape_reverse")
+    escape_reverse_trigger_m = LaunchConfiguration("escape_reverse_trigger_m")
+    escape_reverse_clear_m = LaunchConfiguration("escape_reverse_clear_m")
+    escape_reverse_linear_x = LaunchConfiguration("escape_reverse_linear_x")
+    escape_reverse_angular_z = LaunchConfiguration("escape_reverse_angular_z")
+    escape_reverse_max_s = LaunchConfiguration("escape_reverse_max_s")
+    escape_reverse_cooldown_s = LaunchConfiguration("escape_reverse_cooldown_s")
     hard_stop_m = LaunchConfiguration("hard_stop_m")
     slow_down_m = LaunchConfiguration("slow_down_m")
     soft_max_linear = LaunchConfiguration("soft_max_linear")
@@ -40,6 +56,20 @@ def generate_launch_description():
             DeclareLaunchArgument("guarded_cmd_vel", default_value="/cmd_vel_guarded"),
             DeclareLaunchArgument("stop_request_topic", default_value="/chassis/stop_request"),
             DeclareLaunchArgument("front_sector_deg", default_value="35.0"),
+            DeclareLaunchArgument("front_collision_corridor_half_width_m", default_value="0.26"),
+            DeclareLaunchArgument("front_collision_min_x_m", default_value="0.02"),
+            DeclareLaunchArgument("micro_adjust_sector_deg", default_value="45.0"),
+            DeclareLaunchArgument("micro_adjust_trigger_m", default_value="0.22"),
+            DeclareLaunchArgument("micro_adjust_clear_m", default_value="0.30"),
+            DeclareLaunchArgument("micro_adjust_direction_deadband_m", default_value="0.03"),
+            DeclareLaunchArgument("micro_adjust_direction_latch_s", default_value="1.50"),
+            DeclareLaunchArgument("enable_escape_reverse", default_value="true"),
+            DeclareLaunchArgument("escape_reverse_trigger_m", default_value="0.16"),
+            DeclareLaunchArgument("escape_reverse_clear_m", default_value="0.24"),
+            DeclareLaunchArgument("escape_reverse_linear_x", default_value="-0.08"),
+            DeclareLaunchArgument("escape_reverse_angular_z", default_value="0.20"),
+            DeclareLaunchArgument("escape_reverse_max_s", default_value="0.80"),
+            DeclareLaunchArgument("escape_reverse_cooldown_s", default_value="0.40"),
             DeclareLaunchArgument("hard_stop_m", default_value="1.00"),
             DeclareLaunchArgument("slow_down_m", default_value="1.60"),
             DeclareLaunchArgument("soft_max_linear", default_value="0.30"),
@@ -89,6 +119,20 @@ def generate_launch_description():
                         "status_topic": "/safety/front_obstacle",
                         "event_topic": "/perception/mock_event",
                         "front_sector_deg": front_sector_deg,
+                        "front_collision_corridor_half_width_m": front_collision_corridor_half_width_m,
+                        "front_collision_min_x_m": front_collision_min_x_m,
+                        "micro_adjust_sector_deg": micro_adjust_sector_deg,
+                        "micro_adjust_trigger_m": micro_adjust_trigger_m,
+                        "micro_adjust_clear_m": micro_adjust_clear_m,
+                        "micro_adjust_direction_deadband_m": micro_adjust_direction_deadband_m,
+                        "micro_adjust_direction_latch_s": micro_adjust_direction_latch_s,
+                        "enable_escape_reverse": enable_escape_reverse,
+                        "escape_reverse_trigger_m": escape_reverse_trigger_m,
+                        "escape_reverse_clear_m": escape_reverse_clear_m,
+                        "escape_reverse_linear_x": escape_reverse_linear_x,
+                        "escape_reverse_angular_z": escape_reverse_angular_z,
+                        "escape_reverse_max_s": escape_reverse_max_s,
+                        "escape_reverse_cooldown_s": escape_reverse_cooldown_s,
                         "hard_stop_m": hard_stop_m,
                         "slow_down_m": slow_down_m,
                         "soft_max_linear": soft_max_linear,
