@@ -1,49 +1,73 @@
-# K1 Edge AI Robot
+<div align="center">
 
-This private repository contains the working integration snapshot for the
-SpacemiT K1 Muse Pi Pro based edge AI inspection robot.
+# K1 边缘 AI 风险探测机器人
 
-## Current Preliminary Showcase Baseline
+### 基于进迭时空 K1 的 SLAM-Frontier 自主探测、YOLO 风险识别、风险落图、MoveIt+RL 响应与本地 LLM 报告
 
-As of 2026-07-11, the Ubuntu simulation path has a working autonomous mapping
-recording baseline:
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange.svg)](LICENSE)
+[![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-blue)](https://docs.ros.org/en/humble/)
+[![SpaceMIT K1](https://img.shields.io/badge/SpaceMIT-K1%20MUSE%20Pi%20Pro-purple)](https://www.spacemit.com/)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-SpaceMIT%20EP-orange)](https://onnxruntime.ai/)
+[![SpaceMIT EP](https://img.shields.io/badge/SpaceMIT-Execution%20Provider-orange)](https://bianbu.spacemit.com/)
+[![YOLOv8n](https://img.shields.io/badge/YOLOv8n-Risk%20Vision-red)](https://github.com/ultralytics/ultralytics)
+[![Local LLM](https://img.shields.io/badge/LLM-Local%20Inference-black)](https://github.com/ggml-org/llama.cpp)
+
+[项目报告 PDF](docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf) |
+[项目报告 DOCX](docs/report/spacemit_k1_edge_ai_robot_report.docx) |
+[演示视频](demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4) |
+[自主建图录屏](demo/recordings/) |
+[部署说明](docs/k1_yolov8n_onnx_deployment_20260702.md) |
+[模型目录](models/risk_vision/) |
+[提交材料索引](SUBMISSION.md)
+
+**语言 / Language**：中文 | [English](README.en.md)
+
+</div>
+
+## 项目简介
+
+本仓库为进迭时空 K1 MUSE Pi Pro 边缘 AI 应用赛道的公开源码提交版。项目面向 GPS 拒止、通信受限、云端不可依赖的巡检场景，构建一套在端侧完成建图、感知、风险定位、处置规划和报告生成的移动机器人系统。
+
+当前系统已经集成：
+
+- 基于 ROS2、雷达、里程计和安全守护的遥控二维建图。
+- Ubuntu ROS2 Humble + Gazebo + RViz 下的 SLAM-Frontier/RRT/Nav2 自主建图仿真。
+- SolidWorks/SW2URDF 机械臂导入包，作为后续 MoveIt 与 leakage 处置仿真的独立模型。
+- Intel RealSense D435 RGB-D 输入和 K1 本地 YOLOv8n ONNX 推理。
+- 面向 `crack`、`corrosion`、`blockage`、`leakage` 的风险识别。
+- 结合 confidence 与 depth 的自动报警和落图门限。
+- 将 `bbox + depth + odom` 转换为地图坐标风险点。
+- 浏览器 dashboard 展示 YOLO overlay、`infer_fps`、`front_min`、odom、报警和风险地图。
+- SLAM-Frontier 自主探测与 RRT/A*/Nav2 路径生成接口。
+- MoveIt 机械臂仿真配置、`link4_tip_link` 末端 TCP 标定与地面任务到达验证。
+- MoveIt+RL 风格的机械臂处置动作候选与 no-load 安全响应。
+- 本地 LLM CLI 根据结构化风险点生成最终风险报告。
+
+系统闭环如下：
 
 ```text
-Gazebo tracked base + N10P lidar + D435-style camera
--> slam_toolbox occupancy grid
--> RRT frontier selection
--> Nav2 path following
--> scan safety guard
--> RViz map / laser / trajectory visualization
+未知环境起点 -> SLAM 根据雷达/里程计增量生成 occupancy grid
+SLAM map -> 提取 frontier：已知空闲区 与 未知区 的边界
+frontier -> 聚类并打分 -> 选择最优探索目标
+探索目标 -> RRT/A*/Nav2 生成可行路径 -> 底盘安全守护执行
+底盘执行 -> 地图更新后重复
+D435 RGB-D -> YOLOv8n 本地推理 -> 风险事件
+风险事件 + 深度 + 里程计 -> 地图风险点
+地图风险点 -> MoveIt+RL 规划 -> 机械臂处置候选 + 人工处置任务
+RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地 LLM 风险报告
 ```
 
-Progress notes and recording files:
+## 2026-07-17 实机 RRT/Nav2 探图更新
 
-- `docs/autonomous_mapping_progress_20260711.md`
-- `docs/mechanical_arm_1_import_audit_20260711.md`
-- `docs/mechanical_arm_moveit_tcp_reach_20260712.md`
-- `sim/mechanical_arm_1_description/`
-- `sim/mechanical_arm_1_moveit_config/`
-- `artifacts/recordings/ubuntu/`
+在 K1 实机 2m x 2m 复赛复刻场景中，已补充 SLAM + Nav2 + RRT frontier 自动探图启动流程。当前建议先用纯 RRT/Nav2 验证建图和底盘运动稳定性，再单独接入 D435 YOLO 风险识别，避免 EP/CPU 负载影响导航生命周期。
 
-## K1 实机 2m 场地 RRT/Nav2 探图状态
-
-2026-07-17 现场已在 K1 上跑通实机 SLAM + Nav2 + RRT frontier 自动探图链路。当前建议先用纯 RRT/Nav2 进行建图稳定性验证，再单独接入 D435 YOLO 风险识别，避免 EP/CPU 负载影响导航生命周期。
-
-最新现场运行目录示例：
-
-```text
-/home/soc/edge-ai-robot-k1/outputs/real_k1_rrt_unlimited_field_clean_20260717_192007
-```
-
-链路：
+实机链路：
 
 ```text
 N10P lidar + Tank odom
 -> slam_toolbox occupancy grid
 -> frontier extraction
--> WFD reachable-frontier clustering and scoring
--> RRT / free-roam fallback with obstacle / map-edge clearance
+-> RRT goal sampling with obstacle / map-edge clearance
 -> Nav2 NavigateToPose
 -> /cmd_vel_raw
 -> scan_safety_guard_node
@@ -51,7 +75,7 @@ N10P lidar + Tank odom
 -> Tank base
 ```
 
-Windows 一键启动纯 RRT 2m 长运行：
+Windows 端一键启动纯 RRT 2m 长运行：
 
 ```powershell
 Set-Location K:\risc-vCar\edge-ai-robot-k1
@@ -66,137 +90,159 @@ K1 端分步启动：
 cd /home/soc/edge-ai-robot-k1
 bash tools/start_real_k1_rrt_nav2_mapping.sh clean
 bash tools/start_real_k1_rrt_nav2_mapping.sh nav2-slam
-# wait until the log contains: Managed nodes are active
+# wait until nav2_slam_guard.log contains: Managed nodes are active
 bash tools/start_real_k1_rrt_nav2_mapping.sh rrt-run-2m-unlimited
 ```
 
-停止并保存地图：
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-bash tools/start_real_k1_rrt_nav2_mapping.sh zero
-pkill -INT -f 'sim_rrt_frontier_explorer.py' || true
-bash tools/start_real_k1_rrt_nav2_mapping.sh save-map
-```
-
-### RRT 侧向安全边界
-
-现场出现过侧边擦到 2m 地图框架的问题。原因不是 Nav2 完全按质点规划；Nav2 已配置 footprint，但现场临时 RRT 参数曾使用过过小的障碍膨胀和地图边界留量，例如 `--inflation-m 0.02`、`--map-edge-margin-m 0.00`。这会让 frontier 目标贴近边界，履带车再叠加实际外廓、里程计误差和局部控制跟踪误差，就可能发生侧向擦碰。
-
-当前 2m 预设默认改为更大胆但仍保留边界的自由探图档：
+侧边擦碰修正：现场发现过 RRT 目标贴近地图框架导致履带车侧边擦碰。原因不是 Nav2 完全按质点规划，而是现场临时 RRT 参数曾放得过松，例如 `--inflation-m 0.02`、`--map-edge-margin-m 0.00`。2026-07-18 实机把场地扩大到约 `2.5m x 2.5m` 后，当前使用更大胆但带侧向守护的参数：
 
 ```text
-RRT_SAMPLE_RADIUS_M=1.00
 RRT_INFLATION_M=0.12
 RRT_FRONTIER_STANDOFF_M=0.10
 RRT_GOAL_SEPARATION_M=0.12
 RRT_MAP_EDGE_MARGIN_M=0.15
+FRONT_COLLISION_MIN_X_M=0.12
+MICRO_ADJUST_SECTOR_DEG=45.0
+MICRO_ADJUST_TRIGGER_M=0.28
+MICRO_ADJUST_CLEAR_M=0.34
+ESCAPE_REVERSE_TRIGGER_M=0.16
 Nav2 footprint ~= 0.50 m x 0.44 m outer envelope
 ```
 
-Goal 计算默认使用 `RRT_FRONTIER_MODE=hybrid`：先用 WFD 从机器人当前位置 BFS 扩展可达自由区，找到与未知区相邻的 frontier cell，按 cluster 大小和距离评分选 goal；如果没有可用 frontier，再回退到原 RRT/free-roam。这样比纯随机采样更快，也更少把 goal 打到 Nav2 规划窗口边缘。
+最终实机 run 目录为 `/home/soc/edge-ai-robot-k1/outputs/real_k1_rrt_nav2_mapping_20260718_024536`，地图保存为 `maps/map_after_rrt_free_roam_stop_20260718_030446.yaml`。后期 RRT 进入大量 `wfd_free_roam` 后多次 `progress_timeout/status_6`，因此主动停止并保存地图；下一步应收紧 late-stage free-roam，避免低 clearance 边界目标空转。
 
-现场可调参数：
+## 更新记录
 
-```text
-RRT_FRONTIER_MODE=hybrid      # hybrid / wfd / rrt
-RRT_WFD_MAX_CELLS=12000       # 每轮 BFS 最多检查的可达 free cells
-RRT_MIN_FRONTIER_CLUSTER_CELLS=2
-RRT_FRONTIER_BACKOFFS_M=0.10,0.18,0.25,0.35
-RRT_GOAL_CLEARANCE_CHECK_M=0.50
-RRT_FRONTIER_DISTANCE_WEIGHT=1.0
-RRT_FRONTIER_SIZE_WEIGHT=0.05
-RRT_REJECTED_GOAL_SEPARATION_M=0.25
-RRT_GOAL_PROGRESS_TIMEOUT_S=12
-RRT_GOAL_PROGRESS_GRACE_S=5
-RRT_GOAL_PROGRESS_EPSILON_M=0.03
-RRT_FAILURE_BACKOFF_AFTER=8
-RRT_FAILURE_BACKOFF_S=5
-```
+- **2026-07-18**：完成 K1 实机约 2.5m 场地纯 RRT/Nav2/SLAM 建图验证；加入 45 度侧向微调、贴边短后退和更稳的薄壁角落处理，保存最终地图 `map_after_rrt_free_roam_stop_20260718_030446.yaml`。
+- **2026-07-17**：补充 K1 实机 2m 场地 RRT/Nav2 自动探图脚本、Windows 启动入口、保守 footprint/边界参数，并记录侧向擦碰的工程原因与修正方式。
+- **2026-07-12**：完成机械臂 MoveIt 地面任务 TCP 到达验证；以 `link4_tip_link` 作为第四截末端 TCP，1000 个保守地面工作区目标全部规划并到达，最大 TCP 误差约 7.18 mm，平均约 2.52 mm。记录见 `docs/mechanical_arm_moveit_tcp_reach_20260712.md`，本地输出位于 `outputs/moveit_arm_visual_ground_tcp_direct_marker_1000/`。
+- **2026-07-11**：完成 Ubuntu Humble 仿真自主建图录屏基线：Gazebo 履带底盘、N10P 雷达、D435、`slam_toolbox`、RRT frontier、Nav2、安全守护和 RViz 轨迹显示。
+- **2026-07-08**：整理 GitHub 公开源码提交仓库，补充代码、报告、模型、样例地图、evidence 和演示材料。
+- **2026-07-07**：根据实机场景完成 confidence + depth 联合门限调整。
+- **2026-07-06**：完成演示链路：SLAM-Frontier 自主探测、D435 YOLO、风险地图、dashboard 和 LLM 报告。
+- **2026-07-03**：完成 K1 D435 YOLO 部署流程，并验证 SpaceMIT Execution Provider 推理路径。
+- **2026-06-30**：完成机械臂 no-load 安全响应和地图门控动作接口。
 
-窄入口和薄壁场景下，RRT 不再直接把 frontier cell 当成 goal。每个候选 frontier 会先估计未知区方向，然后向已知 free 区回退 `RRT_FRONTIER_BACKOFFS_M` 里的多个距离，筛掉非 free / footprint inflation 不安全 / 不在当前 WFD 可达区的点，并优先选局部 clearance 更大的入口 goal。`RRT_GOAL` 日志会额外输出 `frontier_id`、`frontier_size`、`candidate_backoff_m`、`goal_clearance_m`、`candidate_type`，用来区分是入口没选好、goal 不可达，还是 Nav2 / safety guard 后续卡住。
+## 核心亮点
 
-2026-07-17 实机验证里，`rolling_window: false` 加 `static_layer` 会被 SLAM `/map` 尺寸反向 resize，导致 RRT 目标仍可能落到 Nav2 global costmap 外沿并触发 `worldToMap failed`。当前 K1 可启动配置使用 4m rolling global costmap：
+### K1 端侧 AI 推理
 
-```yaml
-global_costmap:
-  global_costmap:
-    ros__parameters:
-      rolling_window: true
-      width: 4
-      height: 4
-      inflation_layer:
-        inflation_radius: 0.15
-```
-
-如果再次出现侧边擦框，先回到 `RRT_INFLATION_M=0.18`、`RRT_FRONTIER_STANDOFF_M=0.18`、`RRT_MAP_EDGE_MARGIN_M=0.15`。实车长跑不建议再降到 `0.02/0.00`。
-
-薄壁或贴墙场景不要把微扇区直接当 hard stop。`scan_safety_guard_node` 现在使用左右各 `45°` 微扇区：任一侧进入 `MICRO_ADJUST_TRIGGER_M=0.22m` 时，安全层把前进量压成 0，并以约 `0.22rad/s` 朝更空的一侧旋转；右侧近则左转，左侧近则右转。hard stop 改为只看车体正前方走廊，默认 `FRONT_COLLISION_CORRIDOR_HALF_WIDTH_M=0.26`、`FRONT_COLLISION_MIN_X_M=0.02`，日志同时输出 `front_*` 和 `corridor_*`。2026-07-18 实机卡边读数为右前 `45°` 扇区 `min=0.150m`、`p10=0.154m`，因此新增 `escape_reverse`：`ESCAPE_REVERSE_TRIGGER_M=0.16m`、`ESCAPE_REVERSE_CLEAR_M=0.24m`、`ESCAPE_REVERSE_LINEAR_X=-0.08m/s`、`ESCAPE_REVERSE_ANGULAR_Z=0.20rad/s`，仅在贴边过近时短时后退并远离近侧。
-
-As of 2026-07-12, the mechanical arm MoveIt simulation has a ground-task TCP
-reach validation baseline. The invisible `link4_tip_link` at the end of
-`Link4` is used as the tool center point. In the final RViz fake-state run,
-1000 sampled ground-workspace targets were planned and replayed successfully:
+风险视觉模型在 K1 本地运行，通过 ONNX Runtime 的 SpaceMIT Execution Provider 执行量化 YOLOv8n 模型，不依赖云端 API。演示模型位于：
 
 ```text
-planned_count: 1000
-reached_count: 1000
-failed_plan_count: 0
-failed_reach_count: 0
-max_tcp_error_m: 0.007177
-mean_tcp_error_m: 0.002515
+models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 ```
 
-The local evidence files are under:
+### SLAM-Frontier 自主建图仿真
+
+7 月 11 日完成的 Ubuntu 仿真链路用于展示自主探图能力：
 
 ```text
-outputs/moveit_arm_visual_ground_tcp_direct_marker_1000/
+Gazebo tracked base + N10P lidar + D435-style camera
+-> slam_toolbox occupancy grid
+-> RRT frontier selection
+-> Nav2 path following
+-> scan safety guard
+-> RViz map / laser / trajectory visualization
 ```
 
-The current first-round showcase path, as of 2026-07-03, is supervised remote
-mapping with local risk perception and operator-gated arm response:
+对应材料：
+
+- 进度记录：`docs/autonomous_mapping_progress_20260711.md`
+- 仿真包：`sim/tracked_robot_description/`
+- 录屏：`demo/recordings/`
+- 机械臂导入审计：`docs/mechanical_arm_1_import_audit_20260711.md`
+
+现场记录指标：
+
+- 风险视觉模型 mAP：**0.949**。
+- D435 实时推理在 SpaceMIT EP 下约 **9-11 FPS**。
+- dashboard 示例延迟约 **108 ms**。
+- 风险识别、风险落图和报告生成均在本地链路中完成。
+
+### 风险空间化
+
+系统将通过门限的检测框转换为地图风险点，并将风险帧、风险 JSON、风险地图、dashboard 状态和最终报告保存在同一个 run 目录中，方便回放和复核。
+
+实机场景中采用的自动落图门限：
 
 ```text
-remote low-speed guarded SLAM mapping
--> D435 local YOLO risk detection on K1 SpaceMIT EP
--> confidence/depth-gated risk alarm
--> deduplicated bbox + depth + odom risk point
--> approximate risk point rendered as an odom/map-frame snapshot
--> operator-selected manual arm no-load response
--> deterministic risk report / dashboard
+crack：    confidence >= 0.29，0.60 m <= depth <= 0.80 m
+blockage： confidence >= 0.23，0.35 m <= depth <= 0.75 m
 ```
 
-This is the path to record for the preliminary video. RL is not used to control
-the real vehicle; Gazebo/RL material is only supporting simulation evidence.
-The mechanical arm response is not automatically triggered by YOLO. The
-operator decides when and where to run the fixed no-load response after the
-robot has been remotely positioned and stopped.
+同类近邻合并用于避免连续帧重复保存同一物理风险点。
 
-Current saved map evidence:
+### 本地 LLM 报告
 
-- `maps/prelim_remote_mapping/map_20260703_095806.yaml`
-- `maps/prelim_remote_mapping/map_20260703_095806_preview.png`
-- `maps/prelim_remote_mapping/map_risk_live_20260703_103217.yaml`
-- `maps/prelim_remote_mapping/map_risk_live_20260703_103217_preview.png`
+LLM 报告不是开放式聊天，而是从结构化风险点生成处置清单。最终报告面向人工巡检人员回答：
 
-Primary K1 operation order:
+- 风险位于地图的哪个近似位置；
+- 风险属于哪一类；
+- 检测置信度和风险含义是什么；
+- 人工需要执行什么处置动作。
 
-1. Start guarded mapping with N10P lidar, Tank odom, and `slam_toolbox`.
-2. Start D435 ROS streams at 640x480.
-3. Remote-control the Tank through `/input_cmd_vel`, not direct `/cmd_vel`.
-4. Start local YOLO risk mapping and alarm generation.
-5. Save the map after the run.
-6. Review saved overlay frames and tune confidence/depth gates.
-7. Run the arm no-load response manually only after operator confirmation.
+风险处置映射示例：
 
-Guarded mapping launch:
+| 标签 | 中文含义 | 处置动作 |
+| --- | --- | --- |
+| `crack` | 破损 / 裂缝 | 表面清理、裂缝修补、密封、复查 |
+| `corrosion` | 锈蚀 / 腐蚀 | 除锈、防腐处理、管壁复查 |
+| `blockage` | 障碍物 / 堵塞 | 移除障碍物、清理通道、复查通行 |
+| `leakage` | 渗漏 / 漏液 | 查漏、封堵、干燥、复查 |
+
+## 系统流程
+
+```mermaid
+flowchart LR
+    A["未知环境起点"] --> B["SLAM occupancy grid"]
+    B --> C["Frontier 提取/聚类/打分"]
+    C --> D["RRT/A*/Nav2 可行路径"]
+    D --> E["雷达安全守护"]
+    E --> F["/cmd_vel_guarded"]
+    F --> G["履带底盘执行"]
+    G --> B
+    B --> H["/map + /odom"]
+
+    I["RealSense D435 RGB-D"] --> J["K1 端 YOLOv8n ONNX"]
+    J --> K["风险检测"]
+    K --> L["深度 + 里程计投影"]
+    H --> L
+    L --> M["风险地图"]
+    M --> N["MoveIt+RL 机械臂规划"]
+    N --> O["机械臂处置候选 + 人工处置任务"]
+    D -- "路径结果" --> P["本地 LLM 风险报告"]
+    N -- "规划结果" --> P
+    M -- "结构化风险点" --> P
+    K --> Q["Dashboard / 报警"]
+    M --> Q
+```
+
+## 仓库特性
+
+- **ROS2 建图与启动**：履带底盘、雷达、里程计、SLAM 和地图保存。
+- **安全守护控制**：基于前向距离的遥控速度过滤与急停/慢速/放行逻辑。
+- **D435 本地感知**：RGB-D 采集、YOLO overlay、深度门限和风险事件保存。
+- **风险事件归档**：保存 overlay 帧、原始 RGB 帧、检测 JSON 和运行指标。
+- **风险地图渲染**：风险点投影到地图坐标，并支持同类近邻合并。
+- **Dashboard UI**：通过 K1 本地 HTTP 服务在 K1 屏幕或 Windows 浏览器查看。
+- **机械臂响应接口**：no-load 安全验证、动作空间映射和处置候选。
+- **本地报告生成**：CLI 形式展示 LLM token 流式输出和最终处置清单。
+- **SLAM-Frontier/RRT/A*/Nav2 与 RL 扩展接口**：保留探索目标、路径生成、语义动作空间、primitive registry、训练和评估脚本。
+
+## 快速开始
+
+### 1. 准备 K1 环境
 
 ```bash
 cd /home/soc/edge-ai-robot-k1
 source /opt/ros/humble/setup.bash
 source ros2_ws/install/setup.bash
-source ~/lslidar_ws/install/setup.bash
+```
 
+### 2. 启动 SLAM-Frontier 自主探测与安全守护
+
+```bash
 ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
   hard_stop_m:=0.10 \
   emergency_stop_m:=0.10 \
@@ -207,977 +253,120 @@ ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
   soft_max_linear:=0.10
 ```
 
-Tank teleop must be remapped into the safety guard:
+### 3. 启动 D435 YOLO 风险闭环
 
 ```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard \
-  --ros-args -r /cmd_vel:=/input_cmd_vel
-```
-
-Tank driving notes:
-
-- use lowercase `i` / `,` for forward/back
-- use lowercase `j` / `l` for in-place left/right turns
-- use lowercase `u` / `o` for arc turns
-- do not use uppercase `J` / `L`; those publish holonomic strafe commands that
-  the Tank chassis ignores
-- keep linear speed near the guarded mapping range instead of repeatedly
-  increasing it with `q`
-
-D435 launch:
-
-```bash
-source /opt/ros/humble/setup.bash
-ros2 launch realsense2_camera rs_launch.py \
-  depth_module.depth_profile:=640,480,30 \
-  depth_module.infra_profile:=640,480,30 \
-  rgb_camera.color_profile:=640,480,30
-```
-
-Current K1 YOLO model used for the 5 percent light EP run:
-
-```text
-models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
-provider: SpaceMITExecutionProvider
-input: [1, 3, 480, 640]
-camera: D435 640x480 at 15 FPS
-```
-
-Formal auto alarm/map gates for the current small-map demo:
-
-```text
-crack:    confidence >= 0.29, 0.60 m <= depth <= 0.80 m
-blockage: confidence >= 0.23, 0.35 m <= depth <= 0.75 m
-```
-
-Other classes can still be visible in raw YOLO output, but they are not promoted
-to formal alarms or risk map points for this demonstration.
-
-Standalone D435 YOLO EP check:
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-bash tools/run_k1_yolo_ep_cli_light5.sh cli_ep_480x640_truncated6_light5
-```
-
-From the Windows host, watch the K1 YOLO log in a separate window:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\watch_k1_yolo_cli_log.ps1 `
-  -HostName 192.168.43.40 `
-  -User soc `
-  -RunId cli_ep_480x640_truncated6_light5
-```
-
-Integrated risk mapping runner:
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-
 sudo env PYTHONUNBUFFERED=1 python3 tools/run_prelim_remote_mapping_yolo_arm_demo.py \
   --provider spacemit \
   --model models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx \
-  --imgsz 640 \
-  --conf 0.15 \
-  --iou 0.45 \
-  --max-det 10 \
-  --min-depth-m 0.20 \
-  --max-depth-m 1.20 \
+  --imgsz 640 --conf 0.15 --iou 0.45 --max-det 10 \
+  --min-depth-m 0.20 --max-depth-m 1.20 \
   --auto-risk-gates crack:0.29:0.60:0.80,blockage:0.23:0.35:0.75 \
-  --output-dir outputs/prelim_remote_mapping_yolo_arm_demo_v1/live_001
+  --dedup-map-grid-m 0.20 \
+  --output-dir outputs/prelim_remote_mapping_yolo_arm_demo_v1/live_demo
 ```
 
-K1 local display UI:
+### 4. 打开 dashboard
 
 ```bash
-cd /home/soc/edge-ai-robot-k1/outputs/prelim_remote_mapping_yolo_arm_demo_v1/live_001
+cd outputs/prelim_remote_mapping_yolo_arm_demo_v1/live_demo
 python3 -m http.server 8765 --bind 0.0.0.0
 ```
 
-Open the dashboard on the K1 display at `http://127.0.0.1:8765/dashboard.html`,
-or from the Windows host at `http://192.168.43.40:8765/dashboard.html`.
-
-Expected outputs:
+浏览器访问：
 
 ```text
-dashboard.html
-alarm_state.json
-risk_events.jsonl
-risk_event_index.json
-risk_map_points.json
-risk_map_snapshot.png
-risk_control_report.md
-episode_report.json
-captures/<risk_event_id>/overlay.png
-manual_arm_response_candidates/<risk_event_id>/manual_arm_response_candidate.json
+http://<K1_IP>:8765/dashboard.html
+http://<K1_IP>:8765/yolo_monitor.html
 ```
 
-Save the map at the end of a mapping run:
+### 5. 结束并整理结果
 
 ```bash
-mkdir -p /home/soc/edge-ai-robot-k1/maps/prelim_remote_mapping
-ros2 run nav2_map_server map_saver_cli \
-  -f /home/soc/edge-ai-robot-k1/maps/prelim_remote_mapping/map_<run_id>
+bash tools/finalize_prelim_demo_k1.sh <run_dir>
 ```
 
-Manual review UI for saved risk frames:
+运行目录中会保存地图文件、风险帧、风险 JSON、dashboard 页面、风险位置图和最终 LLM 报告。
 
-```powershell
-python tools\review_risk_detection_labels.py `
-  --run-dir outputs\k1_pull\prelim_remote_mapping_yolo_arm_demo_v1\live_cpu_480_20260703_101632_final `
-  --sort confidence `
-  --open-browser
-```
+## 主要代码入口
 
-Current review rule of thumb: confidence alone is not a stable boundary. Use
-confidence together with bbox depth before promoting a detection into a formal
-alarm or map point. For the preliminary demonstration, prefer conservative
-class/depth gates and avoid claiming general defect detection accuracy.
+| 模块 | 文件 |
+| --- | --- |
+| D435 YOLO + 风险地图集成演示 | `tools/run_prelim_remote_mapping_yolo_arm_demo.py` |
+| K1 SpaceMIT EP 启动脚本 | `tools/start_prelim_noarm_ep_k1.sh` |
+| 演示收尾脚本 | `tools/finalize_prelim_demo_k1.sh` |
+| 底盘安全守护 | `ros2_ws/src/k1_sensor_event_adapter/k1_sensor_event_adapter/scan_safety_guard_node.py` |
+| 本地 LLM 报告 | `tools/run_local_llm_summary.py` |
+| 风险地图总结 | `tools/run_risk_map_summary.py` |
+| 机械臂安全 | `src/arm_safety.py` |
+| 动作原语配置 | `configs/primitive_registry.yaml` |
+| RL 语义策略 | `rl/train_semantic_ppo.py`、`rl/eval_semantic_policy.py` |
 
-Claim boundary for the current preliminary showcase:
+## 模型与数据
 
-- remote mapping is supervised; it is not autonomous exploration
-- YOLO is local K1 inference on the D435 stream under supplemental lighting
-- risk map points are approximate bbox + depth + odom projections
-- repeated detections are deduplicated by class and map/image grid
-- arm response is manual, operator-gated, and no-load only
-- no real obstacle clearing, grasping, payload handling, or contact is claimed
-- RL does not control the real vehicle
-
-Full procedure: `docs/prelim_remote_mapping_yolo_arm_demo_20260703.md`.
-
-## Legacy Step7-E2 Integrated Demo Baseline
-
-Step7-E2 fastdemo remains an earlier validated fallback path:
-
-```text
-P4/N10P guarded micro-motion
--> base_zero after motion
--> D435 HSV red-rule trigger
--> depth risk_point
--> approximate risk map projection
--> Arm-C1 no-load once
--> deterministic LLM-A report
-```
-
-Validated reference runs:
-
-- `outputs/step7e2_guarded_motion_red_rule_flow_v1/e2_guarded_red_rule_arm_hw_fastdemo_002/`
-- `outputs/step7e2_guarded_motion_red_rule_flow_v1/e2_guarded_red_rule_arm_hw_fastdemo_010/`
-
-Stable K1 launch parameters for the live demo:
-
-```bash
-ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
-  hard_stop_m:=0.30 \
-  emergency_stop_m:=0.20 \
-  slow_down_m:=0.80 \
-  approach_stop_m:=0.80 \
-  min_effective_forward:=0.08 \
-  clear_max_linear:=0.30 \
-  soft_max_linear:=0.30
-
-ros2 launch realsense2_camera rs_launch.py \
-  depth_module.depth_profile:=640,480,30 \
-  depth_module.infra_profile:=640,480,30 \
-  rgb_camera.color_profile:=640,480,30
-```
-
-Stable Step7-E2 command on K1:
-
-```bash
-python3 tools/run_step7e2_guarded_motion_red_rule_flow.py \
-  --output-dir outputs/step7e2_guarded_motion_red_rule_flow_v1/e2_guarded_red_rule_arm_hw_fastdemo_<new_id> \
-  --policy-steps 5 \
-  --capture-timeout-s 3.0 \
-  --demo-fast-reuse-policy-base-zero \
-  --enable-guarded-motion \
-  --confirm-guarded-micro-motion \
-  --confirm-n10p-safety \
-  --confirm-no-direct-cmd-vel \
-  --enable-arm-hardware \
-  --confirm-map-gated-no-load \
-  --confirm-no-contact \
-  --confirm-base-zero-live \
-  --confirm-no-cmd-vel
-```
-
-Scene conditions matter. The reference behavior is produced when the initial
-N10P front sector is in the warning band, roughly
-`0.60m <= front_p10 < 0.80m`, and the red target remains in the D435 view after
-the guarded arc. If `front_p10` starts in the clear band, the policy may choose
-a forward step instead of the two right arcs. If the D435 frame stream is not
-publishing, restart the D435 launch before running Step7-E2.
-
-Claim boundary: this demo claims guarded motion through the existing safety
-chain, D435 deterministic red-rule triggering, approximate risk map projection,
-one no-load arm response, and deterministic report generation. It does not
-claim trained visual recognition accuracy, autonomous navigation, path
-planning, high-precision SLAM, grasping, contact, payload handling, obstacle
-clearing, or LLM control of the robot.
-
-## K1 Local YOLO Vision Baseline
-
-The preferred standalone K1 risk-vision check now uses the D435 color stream,
-5 percent supplemental light, and the SpaceMIT EP 480x640 model:
-
-```text
-D435 V4L2 color stream
--> yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
--> ONNX Runtime SpaceMITExecutionProvider
--> realtime CLI log or OpenCV display window
-```
-
-Preferred model for the current light-on demo:
+仓库包含一个可用于复现实机演示的轻量化模型文件：
 
 ```text
 models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
-provider: SpaceMITExecutionProvider
-input: 480x640
-condition: 5 percent supplemental light on
 ```
 
-Stable CLI wrapper:
+大规模原始数据集、ROS bag 和临时运行输出未纳入仓库；最终演示视频已放入 `demo/`，项目报告同时提供 DOCX 与 PDF 版本。数据采集、模型训练、量化和阈值调整过程见：
 
-```bash
-cd /home/soc/edge-ai-robot-k1
-bash tools/run_k1_yolo_ep_cli_light5.sh cli_ep_480x640_truncated6_light5
-```
+- [风险视觉模型完成路径](docs/risk_vision_model_completion_path_20260707.md)
+- [K1 YOLOv8n ONNX 部署说明](docs/k1_yolov8n_onnx_deployment_20260702.md)
+- [XQuant YOLOv8 量化说明](docs/k1_xquant_yolov8_truncated_quantization_20260702.md)
 
-The log should show:
+## 项目结构
 
 ```text
-Using ONNX Runtime providers: ['SpaceMITExecutionProvider', 'CPUExecutionProvider']
-Active ONNX Runtime providers: ['SpaceMITExecutionProvider', 'CPUExecutionProvider']
-Model input shape: [1, 3, 480, 640]
+.
+├── ros2_ws/src/              # ROS2 节点、launch、底盘安全守护、传感器适配
+├── tools/                    # K1 推理、风险落图、dashboard、报告生成、演示脚本
+├── src/                      # 风险协议、机械臂安全校验等通用代码
+├── configs/                  # 风险类别、动作语义、本地 LLM、机械臂安全配置
+├── schemas/                  # 风险点、检测结果、动作候选、报告 JSON schema
+├── rl/                       # 语义动作空间与仿真训练/评估脚本
+├── models/risk_vision/       # 已量化 YOLOv8n ONNX 示例模型与量化报告
+├── maps/                     # 遥控建图与风险地图样例
+├── evidence/                 # 端到端验证记录样例
+├── docs/                     # 设计文档、项目报告、硬件图片、部署记录
+└── demo/                     # 演示视频样例或最终视频链接说明
 ```
 
-Earlier 320x320 balanced-calibration K1 run:
+## 文档索引
 
-```text
-outputs/k1_d435_yolo_realtime_v1/headless_320_q_truncated_balanced_spacemit_current_001/
-detected_frame_count: 53/60
-avg_latency_ms: 66.445
-avg_infer_fps: 15.327
-detected class in test scene: leakage
-confidence range: 0.2080 - 0.3408
-calibration list: models/risk_vision/xquant_yolov8n_320/calib_list_balanced.txt
-balanced calibration first 128 images: crack 37, corrosion 37, leakage 40, blockage 17
+- [提交材料索引](SUBMISSION.md)
+- [开源范围说明](docs/OPEN_SOURCE_SCOPE.md)
+- [最终项目报告 PDF](docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf)
+- [最终项目报告 DOCX](docs/report/spacemit_k1_edge_ai_robot_report.docx)
+- [最终演示视频](demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4)
+- [遥控建图 + YOLO + 机械臂演示设计](docs/prelim_remote_mapping_yolo_arm_demo_20260703.md)
+- [系统协议与整体逻辑](docs/k1_full_system_protocol_and_logic_20260630.md)
+- [本地 LLM 报告接口](docs/local_llm_report_interface_20260701.md)
+- [风险地图总结接口](docs/risk_map_summary_interface_20260702.md)
+- [机械臂 SW2URDF 导入审计](docs/mechanical_arm_1_import_audit_20260711.md)
+
+## 写在最后
+
+从一块国产 RISC-V 开发板出发，我们完成了感知、推理、规划和执行的闭环，也亲身经历了国产平台从“能够运行”走向“稳定运行”所需要跨越的工程门槛。驱动适配、模型算子转换、EP 后端稳定性、传感器时序和进程启动顺序，这些看似琐碎的调试工作，最终共同构成了一个真正能够运行起来的端侧智能机器人样机。
+
+今天的 K1 还不是终点，当前系统也仍然只是一次小规模尝试。但当一块国产芯片真正驱动机器人看见环境、理解风险并作出回应时，我们看到的不只是一个作品的完成，更看到了一条仍在延伸的道路。我们期待国产 RISC-V 继续突破算力、软件和生态边界，也愿意成为这段成长过程中的使用者、记录者和参与者。
+
+## 开源协议
+
+本仓库采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 授权。
+允许学习、研究、测试、教育和非商用展示使用；未经额外书面授权，
+不得用于商业用途、商业产品集成、商业部署或商业转授权。
+
+## 引用
+
+如果本项目对你的边缘 AI 机器人项目有帮助，可按如下形式引用：
+
+```bibtex
+@misc{k1_edge_ai_risk_robot_2026,
+  title  = {K1 Edge AI Risk Inspection Robot},
+  author = {K1 Edge AI Risk Inspection Robot Contributors},
+  year   = {2026},
+  note   = {SpaceMIT K1 MUSE Pi Pro edge AI risk inspection system}
+}
 ```
-
-FP32 fallback:
-
-```text
-models/risk_vision/yolov8n_320_fp32.onnx
-provider: SpaceMITExecutionProvider
-validated fallback fps: about 3.8 - 4.0
-```
-
-K1 display command when a monitor is attached:
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-
-sudo env DISPLAY=:0 XAUTHORITY=/home/soc/.Xauthority QT_QPA_PLATFORM=xcb \
-  python3 tools/run_k1_d435_yolo_realtime_display.py \
-  --provider spacemit \
-  --model models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx \
-  --width 640 --height 480 --fps 15 --imgsz 640 \
-  --conf 0.15 --iou 0.45 --max-det 10 \
-  --warmup-frames 90 \
-  --output-dir outputs/k1_d435_yolo_realtime_v1/ui_ep_480x640_truncated6_light5
-```
-
-This visual recognition mode is local inference only:
-
-- no online API
-- no ROS startup
-- no `cmd_vel` publish
-- no serial port access
-- no chassis or arm control
-
-Claim boundary: this mode can be used to demonstrate local K1 YOLO inference
-on D435 camera frames under supplemental lighting. It does not claim
-real-world defect detection accuracy, low-light robustness without lighting,
-mapping accuracy, autonomous navigation, or robot control.
-
-## Preliminary Remote-Mapping Demo Bridge
-
-This section documents the implementation bridge behind the current preliminary
-showcase. The scope is operator-controlled guarded mapping plus local risk
-perception:
-
-```text
-remote/manual guarded mapping
--> D435 local YOLO risk detection
--> deduplicated risk alarm
--> approximate bbox + depth + odom risk map point
--> manual arm no-load response candidate
--> deterministic risk report / dashboard
-```
-
-Primary runner:
-
-```bash
-python3 tools/run_prelim_remote_mapping_yolo_arm_demo.py \
-  --provider spacemit \
-  --model models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx \
-  --imgsz 640 \
-  --conf 0.15 \
-  --iou 0.45 \
-  --max-det 10 \
-  --min-depth-m 0.20 \
-  --max-depth-m 1.20 \
-  --output-dir outputs/prelim_remote_mapping_yolo_arm_demo_v1/live_001
-```
-
-This runner does not publish `cmd_vel`, does not start chassis motion, and
-does not automatically start the arm. It only generates a manual arm no-load
-response candidate; the operator decides when and where to run the fixed
-no-load sequence after remotely positioning the robot. Full procedure:
-`docs/prelim_remote_mapping_yolo_arm_demo_20260703.md`.
-
-Offline dry-run before the live run:
-
-```bash
-python tools/run_prelim_yolo_map_dryrun.py \
-  --capture-dir outputs/p4x_d435_hold_capture_v1/captures/p4x_hold_capture_20260629_223453_capture_08 \
-  --model models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx \
-  --imgsz 640 \
-  --conf 0.15 \
-  --iou 0.45 \
-  --max-det 10 \
-  --output-dir outputs/prelim_yolo_map_dryrun_v1/offline_real_odom_check
-```
-
-If an image has D435 depth but no robot odom, use the synthetic-pose mode only
-to verify the YOLO -> depth -> map-rendering data path:
-
-```bash
-python tools/run_prelim_yolo_map_dryrun.py \
-  --capture-dir datasets/risk_print_yolo_v1/captures_raw/crack/20260702_152607_700_crack_01_01 \
-  --model models/risk_vision/yolov8n.onnx \
-  --imgsz 640 \
-  --conf 0.25 \
-  --synthetic-odom-if-missing \
-  --output-dir outputs/prelim_yolo_map_dryrun_v1/offline_crack_synthetic_pose_001
-```
-
-Synthetic odom outputs are labeled `odom_source=synthetic_dry_run` and should
-not be used as real robot localization evidence. For the preliminary video,
-record one mapping-session capture where the risk card, depth, camera info,
-and `/odom` are all available in the same run.
-
-## Competition Interface Layer Baseline
-
-The repository now includes a training-prep interface layer for Gazebo/RL,
-local vision models, local report/LLM backends, and future real-vehicle
-adapters. This layer freezes the high-level operation vocabulary so learning
-systems target the same semantics that have already been validated on K1,
-instead of issuing low-level hardware commands.
-
-Primary files:
-
-- `configs/primitive_registry.yaml`
-- `configs/action_semantics.yaml`
-- `configs/rl_action_space.yaml`
-- `configs/risk_detection_backends.yaml`
-- `configs/local_llm_config.yaml`
-- `schemas/episode_report_v2.schema.json`
-- `src/primitives/`
-- `rl/envs/semantic_guarded_nav_env.py`
-- `tools/run_competition_primitive_stack_dryrun.py`
-
-Contract audit status:
-
-- `episode_report_v2.observation_state` is an array so multi-step episodes can
-  preserve per-step observations instead of collapsing them into one object.
-- observation fields use the real vehicle sector naming:
-  `front_min`, `front_p10`, `left_p10`, and `right_p10`.
-- RL observations include policy guard counters: `consecutive_fast_arc` and
-  `total_forward_m`.
-- `benchmarks.vision`, `benchmarks.llm`, and `benchmarks.rl` use explicit
-  fields for later competition review.
-- `risk_map_summary.schema.json` uses inline risk-point definitions to avoid
-  local `$ref` resolution problems.
-
-Frozen high-level primitives include:
-
-```text
-HOLD
-FORWARD_0P15
-ARC_FAST_LEFT
-ARC_FAST_RIGHT
-SAVE_MAP
-STOP_SAFE
-HOLD_CAPTURE
-D435_CAPTURE
-RISK_DETECT_HSV_RED_RULE
-RISK_DETECT_LOCAL_MODEL
-RISK_CLASSIFY_PRINTED_RISK
-RISK_PROJECT_TO_MAP
-RISK_MAP_SUMMARY
-ARM_HOME_6B
-ARM_NO_LOAD_RESPONSE
-ARM_CLEAR_CANDIDATE_DRYRUN
-REPORT_DETERMINISTIC
-REPORT_LOCAL_LLM
-```
-
-RL/Gazebo may output only high-level action candidates. The default RL action
-space is:
-
-```text
-0 HOLD
-1 FORWARD_0P15
-2 ARC_FAST_LEFT
-3 ARC_FAST_RIGHT
-4 HOLD_CAPTURE
-5 ARM_NO_LOAD_RESPONSE
-6 STOP_SAFE
-```
-
-The RL observation vocabulary is aligned to the real scan-sector snapshot and
-policy guard state:
-
-```text
-front_min
-front_p10
-left_p10
-right_p10
-odom_x
-odom_y
-odom_yaw
-map_progress
-risk_detected
-risk_confidence
-risk_class_id
-risk_distance_m
-base_zero
-arm_ready
-capture_recent
-steps_since_capture
-consecutive_fast_arc
-total_forward_m
-```
-
-Real-vehicle safety boundary:
-
-- chassis motion must route through
-  `/input_cmd_vel -> scan_safety_guard_node -> /cmd_vel_guarded`
-- RL must not output raw `cmd_vel`
-- no direct `/cmd_vel_guarded` publish from RL
-- no direct chassis serial write from RL
-- no direct arm servo pulse output from RL
-- arm primitives require `base_zero=true`
-- `ARM_NO_LOAD_RESPONSE` remains no-load only
-
-Local AI/report boundary:
-
-- `hsv_red_rule` is a deterministic baseline, not an AI accuracy claim
-- local YOLO claims must cite measured K1 evidence, including provider, model
-  path, input shape, FPS/latency, lighting condition, and saved overlays
-- deterministic reports are not real local LLM inference
-- local LLM backends must record TTFT, tokens/s, token count, model name, model
-  size, and memory before competition claims
-
-Dry-run validation:
-
-```powershell
-python tools\validate_primitive_registry.py --registry configs\primitive_registry.yaml
-python tools\validate_action_semantics.py --action-semantics configs\action_semantics.yaml
-python tools\export_rl_action_space.py --output outputs\rl_semantic_action_space_v1
-python tools\run_competition_primitive_stack_dryrun.py --output-dir outputs\competition_primitive_stack_dryrun_v1
-python tools\validate_episode_report_v2.py --episode-report outputs\competition_primitive_stack_dryrun_v1\episode_report_v2.json
-```
-
-Optional semantic RL smoke test:
-
-```powershell
-python rl\train_semantic_ppo.py --config rl\configs\rl_semantic_ppo.yaml --output-dir outputs\rl_semantic_train_v1\smoke_001
-python rl\eval_semantic_policy.py --output-dir outputs\rl_semantic_eval_v1\eval_001
-```
-
-Expected dry-run acceptance:
-
-```text
-primitive_registry_valid=true
-action_space_valid=true
-risk_detection_schema_valid=true
-risk_map_summary_valid=true
-episode_report_v2_valid=true
-no_direct_cmd_vel=true
-no_direct_servo_pulse=true
-hardware_executed=false
-errors=[]
-```
-
-This interface layer does not start ROS, open serial ports, control the chassis,
-control the arm, or modify prior Step7/P4 evidence. It is the contract layer for
-the next Ubuntu/Gazebo/RL and local-model work.
-
-## Local LLM And RL Deployment Status
-
-K1 local LLM deployment has a first validated `REPORT_LOCAL_LLM` path on
-`soc@192.168.43.40`:
-
-```text
-model: Qwen2.5-0.5B-Instruct-GGUF
-remote path: /home/soc/local-llm/models/qwen2.5-0.5b-instruct-q4_k_m.gguf
-sha256: 74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db
-runtime: extracted llama.cpp-tools-spacemit package
-threads: 4
-```
-
-The plain native fallback build proved local generation but is slow:
-
-```text
-prompt: 2.2 tok/s
-generation: 1.5 tok/s
-```
-
-The current recommended K1 runtime is the extracted SpacemiT llama.cpp tool
-package with the matching SpacemiT ONNX Runtime libraries on `LD_LIBRARY_PATH`:
-
-```bash
-export SPKG=/home/soc/local-llm/pkg/llama-tools-spacemit/usr
-export ORT=/home/soc/local-llm/pkg/onnxruntime-spacemit/usr
-export LD_LIBRARY_PATH=$SPKG/lib:$ORT/lib:$LD_LIBRARY_PATH
-
-$SPKG/bin/llama-bench \
-  -m /home/soc/local-llm/models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-  -p 128 -n 64 -t 4 -r 1 -o md
-```
-
-Measured same-model `llama-bench` result:
-
-| Runtime | pp128 | tg64 |
-| --- | ---: | ---: |
-| Native fallback `build-k1-basic` | 2.25 tok/s | 1.50 tok/s |
-| `llama.cpp-tools-spacemit` package | 11.28 tok/s | 6.75 tok/s |
-
-Core note for K1 LLM work: all 8 CPU cores are online and can execute generic
-work, but only `cpu0-cpu3` advertise the SpacemiT `_ime` AI extension.
-The SpacemiT LLM backend reports `cpu_mask: f` and should stay at `-t 4`.
-Forcing `-t 8 -C 0xff --cpu-strict 1` triggered `Illegal instruction`, so do
-not force the AI-instruction backend onto `cpu4-cpu7`.
-
-Local LLM claim boundary:
-
-- `REPORT_LOCAL_LLM` may summarize validated episode/risk data only.
-- Prompts should reference high-level primitives such as `HOLD_CAPTURE`,
-  `RISK_DETECT_LOCAL_MODEL`, `RISK_MAP_SUMMARY`, and `REPORT_LOCAL_LLM`.
-- The LLM must not emit raw `/cmd_vel`, direct `/cmd_vel_guarded`, chassis
-  serial bytes, or arm servo bytes.
-- Competition claims still need TTFT, total tokens, tokens/s, model name, model
-  size, memory, and saved prompts/outputs.
-
-RL local deployment is still RL-A0 only:
-
-```text
-stage: server-side mock PPO-style training bring-up
-hardware_connected=false
-ros_started=false
-cmd_vel_published=false
-arm_controlled=false
-```
-
-Current RL-A0 action names are mock policy outputs:
-
-```text
-hold
-forward_0p15
-arc_fast_left
-arc_fast_right
-```
-
-The local smoke check completed 60 episodes, 40 steps per episode, and 3
-checkpoints. Future Windows dual-boot Ubuntu work should start with RL-A0 in a
-Python venv, then build the ROS 2 Humble/Gazebo simulation stack before
-adding a Gymnasium-style environment wrapper. RL-A1 outputs must remain action
-recommendations behind the guarded stack until separately validated.
-
-## Scope
-
-Included:
-
-- ROS 2 Humble base driver package for the WHEELTEC L150Pro Tank chassis.
-- C30D Tank drive profile and N10P mapping launch files.
-- Non-arm K1 bring-up package for base, lidar, D435 placeholder, light, risk engine, and event logger.
-- Intel RealSense D435 bring-up notes.
-- Bus servo controller wiring and smoke-test tool.
-- GPIO37 light control scripts.
-- Real sensor event adapters for N10P `/scan` and D435/RGB low-light events.
-- Current STM32 hex artifacts used during bring-up.
-- Bring-up notes and system state.
-
-Not included:
-
-- Vendor document archives.
-- Proxy subscription files.
-- API keys or tokens.
-- Large model artifacts and ROS bags.
-- Automatic mechanical-arm startup or real arm motion.
-
-## Non-arm Bring-up Package
-
-This branch adds a non-arm bring-up layer for the next K1 upload. It does not
-depend on an arm URDF and does not trigger real arm actions.
-
-Build on K1:
-
-```bash
-cd ~/edge-ai-robot-k1/ros2_ws
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install
-cd ~/edge-ai-robot-k1
-source ros2_ws/install/setup.bash
-```
-
-Safe static launch:
-
-```bash
-ros2 launch k1_system_bringup non_arm_bringup.launch.py
-```
-
-Publish a mock event:
-
-```bash
-cd ~/edge-ai-robot-k1
-python3 tools/publish_mock_event.py --type soft_obstacle --distance 0.8 --confidence 0.9
-```
-
-Check risk outputs:
-
-```bash
-ros2 topic echo /risk/current_level
-ros2 topic echo /risk/recommended_action
-ros2 topic echo /risk/current_event
-```
-
-Safety defaults:
-
-- no `/cmd_vel` is published by bring-up or smoke-test scripts
-- arm actions are not launched
-- light starts at brightness `0`
-- base, lidar, and camera are disabled unless explicitly enabled
-- event logging and risk rules can be tested with mock events
-- real sensor adapters are disabled unless explicitly enabled
-
-K1 validation on 2026-06-25: `colcon build --symlink-install` completed for
-the non-arm workspace, and static risk/logger validation produced
-`soft_obstacle -> medium / stop_and_recheck`. On the current K1 image, GPIO37
-sysfs is owned by `root`; use `light_dry_run:=true` for normal-user static
-testing, or install/run a root-side GPIO service for real lamp control.
-
-Install boot-time light-off guard on K1:
-
-```bash
-cd ~/edge-ai-robot-k1
-sudo scripts/install_gpio37_boot_low_service.sh
-```
-
-This forces GPIO37 low when Linux reaches systemd. For guaranteed off state
-immediately after power is applied, add a physical pulldown resistor from the
-light PWM/control input to GND.
-
-## Real Sensor Event Adapter
-
-The real sensor adapter layer converts N10P/D435 data into the same
-`/perception/mock_event` JSON format used by the existing risk engine.
-
-Safe combined adapter launch:
-
-```bash
-cd ~/edge-ai-robot-k1
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-ros2 launch k1_system_bringup non_arm_bringup.launch.py \
-  use_base:=false \
-  use_lidar:=true \
-  use_camera:=true \
-  camera_enable_depth:=false \
-  use_light:=true \
-  light_dry_run:=true \
-  use_risk_engine:=true \
-  use_event_logger:=true \
-  use_scan_event_adapter:=true \
-  use_camera_low_light_adapter:=true
-```
-
-This launch still does not publish `/cmd_vel`.
-By default, camera bring-up is RGB-only. Enable depth/point cloud explicitly
-with `camera_enable_depth:=true enable_pointcloud:=true` after confirming D435
-power and USB stability.
-
-Automatic low-light lamp bridge, GPIO dry-run mode:
-
-```bash
-ros2 launch k1_system_bringup non_arm_bringup.launch.py \
-  use_base:=false \
-  use_lidar:=false \
-  use_camera:=true \
-  camera_enable_depth:=false \
-  use_light:=true \
-  light_dry_run:=true \
-  use_light_action_bridge:=true \
-  light_auto_on_brightness:=5 \
-  use_risk_engine:=true \
-  use_event_logger:=true \
-  use_camera_low_light_adapter:=true
-```
-
-This maps `turn_on_light_and_recheck` to `/light/brightness_cmd` with a smooth
-ramp and timed auto-off. Use `light_dry_run:=false` only after lamp current,
-temperature, and wiring are checked.
-
-Adaptive D435 RGB light control:
-
-```bash
-ros2 launch k1_system_bringup non_arm_bringup.launch.py \
-  use_base:=false \
-  use_lidar:=false \
-  use_camera:=true \
-  camera_enable_depth:=false \
-  use_light:=true \
-  light_dry_run:=true \
-  use_light_action_bridge:=false \
-  use_adaptive_light_controller:=true \
-  adaptive_light_max_brightness:=5 \
-  use_risk_engine:=true \
-  use_event_logger:=true \
-  use_camera_low_light_adapter:=true
-```
-
-This computes D435 RGB `mean_luma` and `dark_pixel_ratio`, publishes
-`/light/adaptive_status`, and adjusts `/light/brightness_cmd` in safe 0-5%
-steps by default. It is the preferred low-light demonstration mode; do not run it together
-with `use_light_action_bridge:=true`.
-
-## Mapping MVP
-
-The mapping/exploration layer is organized as a guarded SLAM-Frontier loop:
-SLAM incrementally builds the occupancy grid from N10P scan and Tank odom,
-frontiers are extracted between known free space and unknown space, clustered and
-scored, then RRT/A*/Nav2 generates a feasible path to the selected exploration
-goal before the chassis safety guard publishes the final protected velocity.
-
-The mapping launch uses the Python Tank base driver for the C30D ROS firmware.
-It sends the official security keepalive, publishes `/odom`, and publishes
-`odom -> base_footprint` TF for SLAM.
-
-Minimum test order on K1:
-
-```bash
-cd ~/edge-ai-robot-k1
-tools/mapping_preflight_check.sh
-
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-source ~/lslidar_ws/install/setup.bash  # if lslidar_driver is installed separately
-python3 tools/send_safe_zero_cmd.py
-
-ros2 launch turn_on_wheeltec_robot n10p_tank_mapping.launch.py
-```
-
-In separate terminals:
-
-```bash
-ros2 topic hz /scan
-ros2 topic echo /odom --once
-ros2 run tf2_tools view_frames
-```
-
-Only after `/scan`, `/odom`, and TF are healthy, run one guarded continuous
-motion calibration segment:
-
-```bash
-python3 tools/continuous_drive_calibration.py --linear 0.30 --duration 3.0 --ramp-time 0.4
-python3 tools/send_safe_zero_cmd.py
-```
-
-Save a map:
-
-```bash
-tools/save_slam_map.sh
-```
-
-Manual mapping with front scan safety guard:
-
-```bash
-ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
-  serial_port:=/dev/base_controller \
-  max_linear_x:=0.45 \
-  max_angular_z:=0.80 \
-  brake_duration_sec:=1.0
-```
-
-This guarded launch routes manual commands through:
-
-```text
-/input_cmd_vel -> scan_safety_guard_node -> /cmd_vel_guarded -> Tank base
-```
-
-Rules: `front_p10 <= 1.00 m`, `front_min <= 0.45 m`, rapid approach, or
-time-to-collision below `1.20 s` forces zero speed and latches hard stop for
-about `1.50 s`. `1.00-1.60 m` is warning only; it keeps the tested `0.30 m/s`
-crawl cap instead of compressing to ineffective low speeds. Stale `/scan` fails
-closed to zero. Forward commands below `0.28 m/s` are treated as zero because the
-Tank chassis does not reliably overcome static friction below that range. It also publishes
-`/safety/front_obstacle` and `/perception/mock_event` for risk logging. Full
-checklist: `docs/manual_mapping_scan_safety_guard_2026-06-27.md`.
-
-Safety limits: exploration and Nav2 commands pass through the scan safety guard;
-high-speed motion and unattended ground runs stay outside the demo operating envelope. Full checklist:
-`docs/mapping_mvp_test_2026-06-26.md`.
-
-Ground test note: this Tank chassis does not reliably start moving at
-`0.05-0.10 m/s`. For mapping validation, tune continuous guarded motion around
-`0.30 m/s` before Nav2. See
-`docs/c30d_pid_continuous_mapping_tuning_2026-06-26.md` and
-`docs/reference_findings_continuous_mapping_2026-06-26.md`.
-
-## Guarded Nav2 Small Goal Test
-
-The Nav2/RRT path-generation target is validated as a guarded small-goal layer on the current map.
-In the full exploration loop it follows the SLAM-Frontier target selector; Nav2 must never publish directly to the base:
-
-```text
-Nav2 -> /cmd_vel_raw -> scan_safety_guard_node -> /cmd_vel_guarded -> Tank base
-```
-
-Start on K1:
-
-```bash
-cd ~/edge-ai-robot-k1
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-source ~/lslidar_ws/install/setup.bash
-
-ros2 launch turn_on_wheeltec_robot n10p_tank_nav2_guarded.launch.py
-```
-
-The default map is:
-
-```text
-~/edge-ai-robot-k1/maps/mapping_fixed_odom_20260628_085623.yaml
-```
-
-Before sending a goal, verify `/cmd_vel_guarded` is zero and `/scan`, `/odom`,
-`/map`, and TF are healthy. Then send only one small supervised goal:
-
-```bash
-python3 tools/nav2_guarded_small_goal.py --distance 0.2 --confirm YES
-```
-
-Allowed goal distances are exactly `0.2`, `0.3`, and `0.5` meters. Cancel and
-force zero:
-
-```bash
-python3 tools/nav2_cancel_and_zero.py --duration 6
-```
-
-Nav2 speed limits in this mode are capped at `max_vel_x <= 0.20`,
-`max_vel_theta <= 0.35`, and `acc_lim_x <= 0.15`. Recovery spin/backup behavior
-servers are not launched, and the behavior tree omits recovery actions. Full
-checklist: `docs/nav2_guarded_small_goal_2026-06-28.md`.
-
-## Main Commands
-
-Base driver only:
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/ros_ws/install/setup.bash
-ros2 launch turn_on_wheeltec_robot tank_base_brake.launch.py
-```
-
-N10P lidar + Tank base + slam_toolbox:
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/ros_ws/install/setup.bash
-source ~/lslidar_ws/install/setup.bash  # if lslidar_driver is installed separately
-ros2 launch turn_on_wheeltec_robot n10p_tank_mapping.launch.py
-```
-
-Light off:
-
-```bash
-sudo python3 ~/tools/gpio37_light_smooth.py off
-```
-
-Smooth light ramp:
-
-```bash
-sudo python3 ~/tools/gpio37_light_smooth.py set 5 --start 0 --ramp 2 --hold -1
-```
-
-## Current Status
-
-2026-07-18 K1 real-robot RRT/Nav2/SLAM mapping status:
-
-- K1 was tested in a roughly `2.5m x 2.5m` field with pure RRT/Nav2/SLAM only; YOLO/EP stayed off.
-- Latest run directory on K1:
-  `/home/soc/edge-ai-robot-k1/outputs/real_k1_rrt_nav2_mapping_20260718_024536`
-- Final saved map:
-  `/home/soc/edge-ai-robot-k1/outputs/real_k1_rrt_nav2_mapping_20260718_024536/maps/map_after_rrt_free_roam_stop_20260718_030446.yaml`
-- Local rendered snapshot:
-  `outputs/k1_map_snapshots/20260718_030446/map_after_rrt_free_roam_stop_20260718_030446.png`
-- RRT reached useful frontier exploration, then entered mostly `wfd_free_roam` goals with frequent `progress_timeout` / `status_6`; at that point the base was mostly publishing zero velocity and the run was stopped intentionally.
-- The current practical end-of-day state is: map usable for inspection, robot stack stopped, base zeroed, no RRT/Nav2/SLAM process left running on K1.
-
-Current real-robot guard defaults for thin-wall / corner handling:
-
-```text
-FRONT_COLLISION_MIN_X_M=0.12
-MICRO_ADJUST_SECTOR_DEG=45.0
-MICRO_ADJUST_TRIGGER_M=0.28
-MICRO_ADJUST_CLEAR_M=0.34
-ESCAPE_REVERSE_TRIGGER_M=0.16
-ESCAPE_REVERSE_LINEAR_X=-0.08
-ESCAPE_REVERSE_ANGULAR_Z=0.20
-```
-
-Next continuation point: restart from the saved map or fresh SLAM, keep the side-sector micro-adjust enabled, and tighten late-stage free-roam so it does not keep sampling low-clearance boundary cells after frontier goals are mostly exhausted.
-
-See:
-
-- `docs/vehicle_status_2026-06-25.md`
-- `docs/bringup_commands.md`
-- `docs/d435_realsense.md`
-- `docs/bus_servo_controller.md`
-- `docs/non_arm_bringup_2026-06-25.md`
-- `docs/real_sensor_event_adapters_2026-06-25.md`
-- `docs/tomorrow_test_plan_2026-06-25.md`
-- `docs/today_work_plan_2026-06-25.md`
-- `docs/today_work_plan_2026-06-26.md`
-- `docs/mapping_mvp_test_2026-06-26.md`
-- `docs/local_llm_research_2026-06-25.md`
-- `docs/risk_dataset_design_2026-06-25.md`
-- `docs/hazard_scene_simulation_plan_2026-06-25.md`
-- `docs/primitive_action_semantics_20260701.md`
-- `docs/risk_vision_model_interface_20260701.md`
-- `docs/local_llm_report_interface_20260701.md`
-- `docs/k1_local_llm_deployment_20260701.md`
-- `docs/rl_local_deployment_check_20260701.md`
-- `docs/rl_semantic_action_space_20260701.md`
-- `docs/arm_d_clearance_staging_20260701.md`
-- `docs/competition_completion_plan_20260701.md`
-- `docs/k1_d435_risk_vision_deployment_plan_20260701.md`
-- `docs/d435_dataset_collection_workflow_20260701.md`
-- `docs/k1_hold_capture_mapping_schema_20260702.md`
-- `docs/risk_map_summary_interface_20260702.md`
-- `docs/k1_yolov8n_onnx_deployment_20260702.md`
-- `docs/k1_xquant_yolov8_truncated_quantization_20260702.md`
-- `docs/prelim_remote_mapping_yolo_arm_demo_20260703.md`
-- `configs/risk_classes.yaml`
-- `configs/sop_knowledge_base.json`
-- `tools/run_k1_yolo_ep_cli_light5.sh`
-- `tools/run_prelim_remote_mapping_yolo_arm_demo.py`
-- `tools/run_prelim_yolo_map_dryrun.py`
-- `tools/review_risk_detection_labels.py`
-- `maps/prelim_remote_mapping/`
-- `firmware/README.md`
