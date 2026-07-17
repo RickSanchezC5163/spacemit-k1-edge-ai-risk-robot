@@ -69,6 +69,12 @@ class RRTFrontierExplorer(Node):
             payload = json.loads(msg.data)
         except json.JSONDecodeError:
             return
+        if payload.get("alarm") is True:
+            self.risk_detected = True
+            return
+        if payload.get("event_id") is not None and payload.get("class_name") is not None:
+            self.risk_detected = True
+            return
         if payload.get("active_risk_id") is not None and payload.get("state") != "idle":
             self.risk_detected = True
             return
@@ -170,6 +176,31 @@ class RRTFrontierExplorer(Node):
                 return True
         return False
 
+    def nearest_free_start_cell(self, start):
+        if start is None:
+            return None
+        if self.is_free(start):
+            return start
+        max_radius_cells = max(1, int(self.args.start_free_search_m / self.map_msg.info.resolution))
+        best = None
+        best_dist_sq = None
+        sx, sy = start
+        for radius in range(1, max_radius_cells + 1):
+            for y in range(max(0, sy - radius), min(self.map_msg.info.height, sy + radius + 1)):
+                for x in range(max(0, sx - radius), min(self.map_msg.info.width, sx + radius + 1)):
+                    cell = (x, y)
+                    if not self.is_free(cell):
+                        continue
+                    if self.near_obstacle(cell, self.inflation_cells()):
+                        continue
+                    dist_sq = (x - sx) ** 2 + (y - sy) ** 2
+                    if best is None or dist_sq < best_dist_sq:
+                        best = cell
+                        best_dist_sq = dist_sq
+            if best is not None:
+                return best
+        return None
+
     def frontier_goal_cell(self, frontier_cell, start_cell):
         retreat_cells = max(0, int(self.args.frontier_standoff_m / self.map_msg.info.resolution))
         fx, fy = frontier_cell
@@ -234,7 +265,8 @@ class RRTFrontierExplorer(Node):
         if pose is None or self.map_msg is None:
             return None, "not_ready"
         start = self.world_to_cell(pose[0], pose[1])
-        if start is None or not self.is_free(start):
+        start = self.nearest_free_start_cell(start)
+        if start is None:
             return None, "bad_start"
 
         nodes = [start]
@@ -386,6 +418,7 @@ def parse_args():
     parser.add_argument("--recent-goal-memory", type=int, default=24)
     parser.add_argument("--frontier-standoff-m", type=float, default=0.35)
     parser.add_argument("--map-edge-margin-m", type=float, default=0.15)
+    parser.add_argument("--start-free-search-m", type=float, default=0.35)
     parser.add_argument("--send-nav2-action", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--report", default="")

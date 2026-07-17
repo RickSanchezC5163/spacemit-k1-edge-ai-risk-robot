@@ -103,6 +103,13 @@ def generate_launch_description():
     nav2_cmd_vel = LaunchConfiguration("nav2_cmd_vel")
     guarded_cmd_vel = LaunchConfiguration("guarded_cmd_vel")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    hard_stop_m = LaunchConfiguration("hard_stop_m")
+    emergency_stop_m = LaunchConfiguration("emergency_stop_m")
+    slow_down_m = LaunchConfiguration("slow_down_m")
+    approach_stop_m = LaunchConfiguration("approach_stop_m")
+    min_effective_forward = LaunchConfiguration("min_effective_forward")
+    clear_max_linear = LaunchConfiguration("clear_max_linear")
+    soft_max_linear = LaunchConfiguration("soft_max_linear")
 
     configured_params = ParameterFile(
         RewrittenYaml(
@@ -123,6 +130,13 @@ def generate_launch_description():
             DeclareLaunchArgument("nav2_cmd_vel", default_value="/cmd_vel_raw"),
             DeclareLaunchArgument("guarded_cmd_vel", default_value="/cmd_vel_guarded"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
+            DeclareLaunchArgument("hard_stop_m", default_value="1.00"),
+            DeclareLaunchArgument("emergency_stop_m", default_value="0.45"),
+            DeclareLaunchArgument("slow_down_m", default_value="1.60"),
+            DeclareLaunchArgument("approach_stop_m", default_value="1.60"),
+            DeclareLaunchArgument("min_effective_forward", default_value="0.08"),
+            DeclareLaunchArgument("clear_max_linear", default_value="0.30"),
+            DeclareLaunchArgument("soft_max_linear", default_value="0.30"),
             DeclareLaunchArgument(
                 "nav2_params",
                 default_value=os.path.join(pkg_share, "config", "nav2_n10p_tank_guarded.yaml"),
@@ -134,6 +148,13 @@ def generate_launch_description():
                 launch_arguments={
                     "input_cmd_vel": nav2_cmd_vel,
                     "guarded_cmd_vel": guarded_cmd_vel,
+                    "hard_stop_m": hard_stop_m,
+                    "emergency_stop_m": emergency_stop_m,
+                    "slow_down_m": slow_down_m,
+                    "approach_stop_m": approach_stop_m,
+                    "min_effective_forward": min_effective_forward,
+                    "clear_max_linear": clear_max_linear,
+                    "soft_max_linear": soft_max_linear,
                 }.items(),
                 condition=IfCondition(start_mapping_stack),
             ),

@@ -267,7 +267,7 @@ def evaluate_auto_risk_gate(det: Dict[str, Any], gates: Dict[str, Dict[str, floa
         "actual_confidence": round(confidence, 4),
         "actual_depth_m": depth_value,
     }
-    gate = gates.get(class_name)
+    gate = gates.get(class_name) or gates.get("*") or gates.get("all") or gates.get("any")
     if gate is None:
         result["reason"] = "class_not_enabled_for_auto_alarm_or_map"
         return result
@@ -293,6 +293,30 @@ def evaluate_auto_risk_gate(det: Dict[str, Any], gates: Dict[str, Dict[str, floa
     result["allowed"] = True
     result["reason"] = "passed"
     return result
+
+
+def build_ort_session_options(args: argparse.Namespace) -> Any:
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    graph_levels = {
+        "disabled": ort.GraphOptimizationLevel.ORT_DISABLE_ALL,
+        "basic": ort.GraphOptimizationLevel.ORT_ENABLE_BASIC,
+        "extended": ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED,
+        "all": ort.GraphOptimizationLevel.ORT_ENABLE_ALL,
+    }
+    options.graph_optimization_level = graph_levels[str(args.ort_graph_optimization_level)]
+    if int(args.ort_intra_op_threads) > 0:
+        options.intra_op_num_threads = int(args.ort_intra_op_threads)
+    if int(args.ort_inter_op_threads) > 0:
+        options.inter_op_num_threads = int(args.ort_inter_op_threads)
+    if args.ort_execution_mode == "sequential":
+        options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    elif args.ort_execution_mode == "parallel":
+        options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+    if args.ort_allow_spinning != "default":
+        options.add_session_config_entry("session.intra_op.allow_spinning", str(args.ort_allow_spinning))
+    return options
 
 
 def odom_is_zero(odom: Optional[Dict[str, Any]], linear_eps: float, angular_eps: float) -> bool:
@@ -420,12 +444,23 @@ class PrelimDemoNode(Node):
 
         import onnxruntime as ort
 
+        if int(args.opencv_num_threads) >= 0:
+            try:
+                import cv2
+
+                cv2.setNumThreads(int(args.opencv_num_threads))
+            except Exception as exc:  # noqa: BLE001 - best-effort runtime tuning.
+                self.errors.append(
+                    {"timestamp": now_iso(), "stage": "opencv_set_threads", "error": str(exc)}
+                )
+
         model_path = Path(args.model)
         if not model_path.exists():
             raise FileNotFoundError(f"model not found: {model_path}")
         providers = select_ort_providers(args.provider)
+        session_options = build_ort_session_options(args)
         load_start = time.perf_counter()
-        self.session = ort.InferenceSession(str(model_path), providers=providers)
+        self.session = ort.InferenceSession(str(model_path), sess_options=session_options, providers=providers)
         self.model_load_latency_ms = round((time.perf_counter() - load_start) * 1000.0, 3)
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
@@ -450,6 +485,15 @@ class PrelimDemoNode(Node):
                 "model_path": str(model_path),
                 "model_load_latency_ms": self.model_load_latency_ms,
                 "onnxruntime_providers": self.active_providers,
+                "runtime_tuning": {
+                    "opencv_num_threads": args.opencv_num_threads,
+                    "ort_graph_optimization_level": args.ort_graph_optimization_level,
+                    "ort_execution_mode": args.ort_execution_mode,
+                    "ort_intra_op_threads": args.ort_intra_op_threads,
+                    "ort_inter_op_threads": args.ort_inter_op_threads,
+                    "ort_allow_spinning": args.ort_allow_spinning,
+                    "no_visuals": args.no_visuals,
+                },
                 "topics": {
                     "rgb": args.rgb_topic,
                     "depth": args.depth_topic,
@@ -553,7 +597,8 @@ class PrelimDemoNode(Node):
         self.frame_count += 1
         self.inference_count += 1
         if not detections:
-            draw_overlay(frame_bgr, [], self.output_dir / "latest_overlay.png")
+            if not self.args.no_visuals:
+                draw_overlay(frame_bgr, [], self.output_dir / "latest_overlay.png")
             self.write_alarm_state(None, [], latency_ms)
             return
 
@@ -582,7 +627,8 @@ class PrelimDemoNode(Node):
             if gate_result.get("allowed"):
                 formal_candidates.append(det)
 
-        draw_overlay(frame_bgr, localized[: self.args.max_det], self.output_dir / "latest_overlay.png")
+        if not self.args.no_visuals:
+            draw_overlay(frame_bgr, localized[: self.args.max_det], self.output_dir / "latest_overlay.png")
 
         new_events: List[Dict[str, Any]] = []
         for det in formal_candidates[: self.args.max_events_per_frame]:
@@ -595,10 +641,11 @@ class PrelimDemoNode(Node):
             latest_alarm = self.transient_alarm_from_detection(formal_candidates[0])
 
         self.store.write_all()
-        self.write_map_snapshot()
-        self.write_episode_report(status="running")
-        self.write_risk_report()
-        self.write_dashboard()
+        if not self.args.no_visuals:
+            self.write_map_snapshot()
+            self.write_episode_report(status="running")
+            self.write_risk_report()
+            self.write_dashboard()
         self.write_alarm_state(latest_alarm, localized, latency_ms)
 
     def transient_alarm_from_detection(self, det: Dict[str, Any]) -> Dict[str, Any]:
@@ -1211,6 +1258,25 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--timer-period-s", type=float, default=0.10)
     parser.add_argument("--inference-period-s", type=float, default=0.35)
     parser.add_argument("--fresh-timeout-s", type=float, default=2.0)
+    parser.add_argument(
+        "--no-visuals",
+        action="store_true",
+        help="Skip per-frame overlay/dashboard/map snapshot/report writes; keep JSON alarms/map points and event evidence.",
+    )
+    parser.add_argument("--opencv-num-threads", type=int, default=1)
+    parser.add_argument(
+        "--ort-graph-optimization-level",
+        choices=["disabled", "basic", "extended", "all"],
+        default="all",
+    )
+    parser.add_argument(
+        "--ort-execution-mode",
+        choices=["sequential", "parallel", "default"],
+        default="sequential",
+    )
+    parser.add_argument("--ort-intra-op-threads", type=int, default=0)
+    parser.add_argument("--ort-inter-op-threads", type=int, default=1)
+    parser.add_argument("--ort-allow-spinning", choices=["default", "0", "1"], default="default")
     parser.add_argument("--min-depth-m", type=float, default=0.15)
     parser.add_argument("--max-depth-m", type=float, default=5.0)
     parser.add_argument(

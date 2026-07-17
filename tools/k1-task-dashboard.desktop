@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=K1 Task Dashboard
+Name[zh_CN]=K1 任务控制台
+Comment=Open the K1 task-oriented robot dashboard
+Exec=/home/soc/edge-ai-robot-k1/tools/start_k1_task_desktop_ui.sh
+Icon=applications-system
+Terminal=false
+X-LXQt-Need-Tray=false
+OnlyShowIn=LXQt;

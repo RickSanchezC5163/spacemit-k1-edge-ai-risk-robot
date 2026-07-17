@@ -57,8 +57,58 @@ D435 RGB-D -> YOLOv8n 本地推理 -> 风险事件
 RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地 LLM 风险报告
 ```
 
+## 2026-07-17 实机 RRT/Nav2 探图更新
+
+在 K1 实机 2m x 2m 复赛复刻场景中，已补充 SLAM + Nav2 + RRT frontier 自动探图启动流程。当前建议先用纯 RRT/Nav2 验证建图和底盘运动稳定性，再单独接入 D435 YOLO 风险识别，避免 EP/CPU 负载影响导航生命周期。
+
+实机链路：
+
+```text
+N10P lidar + Tank odom
+-> slam_toolbox occupancy grid
+-> frontier extraction
+-> RRT goal sampling with obstacle / map-edge clearance
+-> Nav2 NavigateToPose
+-> /cmd_vel_raw
+-> scan_safety_guard_node
+-> /cmd_vel_guarded
+-> Tank base
+```
+
+Windows 端一键启动纯 RRT 2m 长运行：
+
+```powershell
+Set-Location K:\risc-vCar\edge-ai-robot-k1
+powershell -ExecutionPolicy Bypass -File tools\win_start_real_k1_rrt_nav2_mapping.ps1 `
+  -Mode nav2-run-2m-unlimited `
+  -CleanFirst
+```
+
+K1 端分步启动：
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+bash tools/start_real_k1_rrt_nav2_mapping.sh clean
+bash tools/start_real_k1_rrt_nav2_mapping.sh nav2-slam
+# wait until nav2_slam_guard.log contains: Managed nodes are active
+bash tools/start_real_k1_rrt_nav2_mapping.sh rrt-run-2m-unlimited
+```
+
+侧边擦碰修正：现场发现过 RRT 目标贴近地图框架导致履带车侧边擦碰。原因不是 Nav2 完全按质点规划，而是现场临时 RRT 参数曾放得过松，例如 `--inflation-m 0.02`、`--map-edge-margin-m 0.00`。当前 2m 预设改为保守边界：
+
+```text
+RRT_INFLATION_M=0.24
+RRT_FRONTIER_STANDOFF_M=0.30
+RRT_GOAL_SEPARATION_M=0.30
+RRT_MAP_EDGE_MARGIN_M=0.16
+Nav2 footprint ~= 0.50 m x 0.44 m outer envelope
+```
+
+如果路径过保守，可临时放宽 `RRT_INFLATION_M=0.18`；实车长跑不建议再降到 `0.02`。
+
 ## 更新记录
 
+- **2026-07-17**：补充 K1 实机 2m 场地 RRT/Nav2 自动探图脚本、Windows 启动入口、保守 footprint/边界参数，并记录侧向擦碰的工程原因与修正方式。
 - **2026-07-12**：完成机械臂 MoveIt 地面任务 TCP 到达验证；以 `link4_tip_link` 作为第四截末端 TCP，1000 个保守地面工作区目标全部规划并到达，最大 TCP 误差约 7.18 mm，平均约 2.52 mm。记录见 `docs/mechanical_arm_moveit_tcp_reach_20260712.md`，本地输出位于 `outputs/moveit_arm_visual_ground_tcp_direct_marker_1000/`。
 - **2026-07-11**：完成 Ubuntu Humble 仿真自主建图录屏基线：Gazebo 履带底盘、N10P 雷达、D435、`slam_toolbox`、RRT frontier、Nav2、安全守护和 RViz 轨迹显示。
 - **2026-07-08**：整理 GitHub 公开源码提交仓库，补充代码、报告、模型、样例地图、evidence 和演示材料。
