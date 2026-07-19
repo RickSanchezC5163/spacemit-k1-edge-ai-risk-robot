@@ -57,68 +57,38 @@ D435 RGB-D -> YOLOv8n 本地推理 -> 风险事件
 RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地 LLM 风险报告
 ```
 
-## 2026-07-17 实机 RRT/Nav2 探图更新
+## 2026-07-20 实机完整链路基线
 
-在 K1 实机 2m x 2m 复赛复刻场景中，已补充 SLAM + Nav2 + RRT frontier 自动探图启动流程。当前建议先用纯 RRT/Nav2 验证建图和底盘运动稳定性，再单独接入 D435 YOLO 风险识别，避免 EP/CPU 负载影响导航生命周期。
+当前 K1 实机基线是在约 `2m x 2m` 复赛复刻场地中，同时运行自由探图、风险识别、blockage 接近、USB 近距离确认和机械臂语义切换。主 D435 YOLO 使用 SpaceMIT Execution Provider，默认 `1s/frame`，不开视频流；原始 RGB-D 不经过 ROS2 DDS 广播。
 
-实机链路：
+完整链路：
 
 ```text
 N10P lidar + Tank odom
--> slam_toolbox occupancy grid
--> frontier extraction
--> RRT goal sampling with obstacle / map-edge clearance
+-> Slam Toolbox occupancy grid + map/odom TF
+-> WFD/RRT frontier and free-roam goal selection
 -> Nav2 NavigateToPose
 -> /cmd_vel_raw
 -> scan_safety_guard_node
 -> /cmd_vel_guarded
 -> Tank base
+
+D435 raw frameset ring buffer
+-> SpaceMIT EP YOLO
+-> capture-time depth + camera/base/odom/map projection
+-> bounded candidate memory + multi-frame spatial fusion
+-> crack/corrosion/leakage: record and continue exploration
+-> blockage: pause RRT -> approach/already-near -> USB close confirm
+-> arm semantic switch -> resume unlimited RRT
 ```
 
-Windows 端一键启动纯 RRT 2m 长运行：
-
-```powershell
-Set-Location K:\risc-vCar\edge-ai-robot-k1
-powershell -ExecutionPolicy Bypass -File tools\win_start_real_k1_rrt_nav2_mapping.ps1 `
-  -Mode nav2-run-2m-unlimited `
-  -CleanFirst
-```
-
-K1 端分步启动：
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-bash tools/start_real_k1_rrt_nav2_mapping.sh clean
-bash tools/start_real_k1_rrt_nav2_mapping.sh nav2-slam
-# wait until nav2_slam_guard.log contains: Managed nodes are active
-bash tools/start_real_k1_rrt_nav2_mapping.sh rrt-run-2m-unlimited
-```
-
-侧边擦碰修正：现场发现过 RRT 目标贴近地图框架导致履带车侧边擦碰。原因不是 Nav2 完全按质点规划，而是现场临时 RRT 参数曾放得过松，例如 `--inflation-m 0.02`、`--map-edge-margin-m 0.00`。2026-07-18 实机把场地扩大到约 `2.5m x 2.5m` 后，当前使用更大胆但带侧向守护的参数：
-
-```text
-RRT_INFLATION_M=0.12
-RRT_FRONTIER_STANDOFF_M=0.10
-RRT_GOAL_SEPARATION_M=0.12
-RRT_MAP_EDGE_MARGIN_M=0.15
-FRONT_COLLISION_MIN_X_M=0.12
-MICRO_ADJUST_SECTOR_DEG=45.0
-MICRO_ADJUST_TRIGGER_M=0.28
-MICRO_ADJUST_CLEAR_M=0.34
-ESCAPE_REVERSE_TRIGGER_M=0.16
-Nav2 footprint ~= 0.50 m x 0.44 m outer envelope
-```
-
-最终实机 run 目录为 `/home/soc/edge-ai-robot-k1/outputs/real_k1_rrt_nav2_mapping_20260718_024536`，地图保存为 `maps/map_after_rrt_free_roam_stop_20260718_030446.yaml`。后期 RRT 进入大量 `wfd_free_roam` 后多次 `progress_timeout/status_6`，因此主动停止并保存地图；下一步应收紧 late-stage free-roam，避免低 clearance 边界目标空转。
-
-## 2026-07-19 实机完整链路更新
-
-在 2m 复赛复刻场景中，当前实机链路已进入“自由探图 + YOLO 风险识别 + blockage 靠近 + 近距离确认预留”的完整演示形态。YOLO 使用 SpaceMIT Execution Provider，默认 `1s/frame`，不开视频流，避免 UI 和 DDS 负载干扰 Nav2。
-
-当前 2m 默认 RRT 档位：
+当前 `2m` 默认 RRT 档位：
 
 ```text
 RRT_SAMPLE_RADIUS_M=0.50
+RRT_ADAPTIVE_TIGHT_SAMPLE_RADIUS_M=0.50
+RRT_ADAPTIVE_WIDE_SAMPLE_RADIUS_M=0.50
+RRT_ADAPTIVE_WIDE_CLEARANCE_M=0.15
 RRT_MIN_GOAL_DISTANCE_M=0.30
 RRT_INFLATION_M=0.12
 RRT_FRONTIER_STANDOFF_M=0.10
@@ -126,32 +96,88 @@ RRT_MIN_GOAL_CLEARANCE_M=0.24
 RRT_MAP_EDGE_MARGIN_M=0.10
 RRT_FREE_ROAM_MIN_DISTANCE_M=0.15
 RRT_REPLAN_SLEEP_S=2.5
+RRT_GOAL_PROGRESS_TIMEOUT_S=30
+RRT_RECENT_GOAL_COOLDOWN_S=30
+RRT_REJECTED_GOAL_COOLDOWN_S=30
+RRT_NO_FRONTIER_RETRY_S=10
 ```
 
-风险识别采用“候选记录”和“正式落图”分离：
+RRT 按 `/map` 内容版本和目标结果事件重算；地图不变时不重复执行整图 WFD。失败目标使用时间冷却，`no_frontier` 会周期重试。检测到“Nav2 持续要求转动但 odom 角速度接近零”时，会取消当前目标并短时向相反方向转动；角向脱困不后退。
+
+风险识别和空间化参数：
 
 ```text
-APPROACH_RISK_GATES: conf >= 0.15, depth 0.20-1.20m
-AUTO_RISK_GATES:     conf >= 0.60, depth 0.20-1.20m
+YOLO_FRAME_SOURCE=realsense
+YOLO_PROVIDER=spacemit
+YOLO_INFERENCE_PERIOD_S=1.0
+APPROACH_RISK_GATES=crack/corrosion/leakage/blockage: conf>=0.15, depth 0.20-1.20m
+AUTO_RISK_GATES=crack/corrosion/leakage/blockage: conf>=0.60, depth 0.20-1.20m
 RISK_MAP_WRITE_POLICY=approach_confirmed
+RISK_POSE_CACHE_DURATION_S=3.0
+RISK_POSE_SAMPLE_HZ=10.0
+RISK_POSE_MAX_AGE_S=0.20
+RISK_FUSION_DISTANCE_M=0.25
+RISK_FUSION_TIME_S=2.0
+RISK_FUSION_REQUIRED=2
+RISK_FUSION_WINDOW=3
 ```
 
-`crack`、`corrosion`、`leakage` 先作为候选记录，RRT 不被打断；车辆自然靠近后再做近距离确认。`blockage` 可触发事件驱动靠近，并预留机械臂处置语义。风险事件现在会尝试通过 TF 写入 `map_point_xy_m`；如果只有 `odom_point_xy_m`，可视化会标为 `odom≈` 近似候选，不再当作精确地图点。
+D435 采集线程只维护 3 个最新 raw frameset；推理线程先运行 YOLO，仅在检测命中时对同一 frameset 做深度对齐。风险点使用 RGB 拍摄时刻的 `camera -> base -> odom -> map` 变换，不使用推理结束时的当前位姿。候选池上限为 64、TTL 为 60 秒；至少 2 次有效空间观测才升级为 `spatially confirmed`。统一状态保存在 `<run>/yolo_risk/mission_state.json`，并预留 `visualization`、`arm`、`llm_report`、`voice` 接口。
 
-为降低完整链路的 CPU/DDS 压力，`risk-approach` 默认由 YOLO 进程通过原生 `pyrealsense2` 直接读取 D435，不再发布 15 FPS 原始图像 DDS。采集线程只覆盖保存 3 个最新 raw frameset 引用；推理线程先处理最新 RGB，只有检测命中时才对同一 frameset 执行深度对齐。需要回退旧链路时可设置 `YOLO_FRAME_SOURCE=ros`。K1 已安装同版本 ROS C++ 库时，可只编译 Python binding：
+K1 端完整启动顺序：
+
+```bash
+ssh soc@192.168.43.40
+cd /home/soc/edge-ai-robot-k1
+
+bash tools/start_real_k1_rrt_nav2_mapping.sh clean
+bash tools/start_real_k1_rrt_nav2_mapping.sh nav2-slam
+
+RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
+# 等待 nav2_slam_guard.log 出现: Managed nodes are active
+bash tools/start_real_k1_rrt_nav2_mapping.sh risk-approach "$RUN"
+bash tools/start_real_k1_rrt_nav2_mapping.sh rrt-run-2m-unlimited "$RUN"
+```
+
+监视、保存和收车：
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
+
+tail -f "$RUN/rrt_unlimited.log"
+tail -f "$RUN/yolo_risk_headless.log"
+tail -f "$RUN/risk_approach/risk_approach_records.jsonl"
+watch -n 0.5 "cat $RUN/yolo_risk/alarm_state.json"
+
+pkill -INT -f 'sim_rrt_frontier_explorer.py' || true
+bash tools/start_real_k1_rrt_nav2_mapping.sh zero
+bash tools/start_real_k1_rrt_nav2_mapping.sh save-map "$RUN"
+bash tools/start_real_k1_rrt_nav2_mapping.sh clean
+```
+
+K1 已安装匹配的 librealsense ROS C++ 库时，可以只编译 Python binding：
 
 ```bash
 cd /home/soc/edge-ai-robot-k1
 bash tools/build_k1_pyrealsense2_binding.sh /path/to/librealsense-2.55.1
 ```
 
-正式链默认仍为 SpaceMIT EP；设置 `YOLO_PROVIDER=cpu` 时启动脚本才会改用 `yolov8n_480x640_fp32_blockage03.onnx`。RRT 现在根据 `/map` 内容版本和目标完成事件触发重算。地图不变且没有新事件时不会反复执行整图 WFD/RRT，`RRT_SUMMARY.planning_metrics` 会记录规划轮数、地图版本和跳过的重复更新。
+最新实车验证结果：
 
-风险候选默认最多保留 64 个、TTL 60 秒，同一候选只保留最高置信度证据；USB 近距离核实后的风险进入独立 confirmed 列表。统一状态文件为 `<run>/yolo_risk/mission_state.json`，并预留 `visualization`、`arm`、`llm_report`、`voice` 四个后续接口，本轮不启动这些高层模块。
+- 连续资源采样 180 秒，共 90 个样本。
+- 系统 CPU 均值 `78.68%`，已跟踪进程合计 `527.31%`，可用内存约 `14.34GiB`。
+- 完整运行累计 27 个 RRT goal、6 个 D435 风险事件。
+- blockage 仅触发一次正式处置；USB 近距离确认得到 `blockage=0.8061`，随后完成机械臂语义切换模拟并恢复 RRT。
+- 最终 SLAM 地图为 `40 x 40` 栅格、`0.05m/pixel`；地图、RRT/风险叠图、USB 核验图和资源统计见 [`docs/results/real_k1_full_chain_20260720`](docs/results/real_k1_full_chain_20260720/README.md)。
 
-风险空间化使用最近 3 秒、默认 10 Hz 的 PoseSample 缓存，按 RGB 拍摄时刻完成 `camera -> base -> odom -> map` 投影，避免使用推理结束后的当前位姿投影旧图像。单帧风险不会直接进入正式接近事件：同类别、2 秒内、地图距离不超过 0.25m 的观测进入 3 帧窗口，至少 2 次具有有效深度和拍摄时刻位姿才升级为 `spatially confirmed`。融合权重为 `confidence * depth_quality * pose_quality`；近距离 USB 核验前，机械臂状态固定为 `blocked_until_close_verify`。
+当前待修问题：
 
-新增自适应可视化工具：
+1. 同一 blockage 的空间融合候选与 USB confirmed 记录需要统一 risk identity 和 `map` 坐标后再跨阶段去重。
+2. 25 个已有 RRT 结果中包含 11 次 `progress_timeout` 和 6 次角向 `physical_stuck`，高负载时 Nav2 controller 仍偶发控制周期超时。
+3. USB 核验子进程当前未加载 SpaceMIT EP，会回退 CPU；主 D435 YOLO 不受影响，仍使用 SpaceMIT EP。
+
+自适应横平竖直可视化：
 
 ```bash
 python3 tools/visualize_k1_map_rrt_risk_overlay.py \
@@ -162,102 +188,10 @@ python3 tools/visualize_k1_map_rrt_risk_overlay.py \
   --output-dir <local_visualization_dir>
 ```
 
-该工具会根据 SLAM 地图墙线自动估计主方向，把地图旋成横平竖直，并叠加 RRT goal、YOLO 风险候选和 approach 记录。2026-07-19 一轮数据中，YOLO 记录 26 个风险候选，过滤 `confidence >= 0.50` 后剩 7 个高置信候选；该轮旧日志尚无 `map_point_xy_m`，因此这些点只能作为 `odom≈` 诊断点。
-
-### 2026-07-20 实车完整链验证
-
-最新一轮在约 `2m x 2m` 场地中真实运行 `SLAM + Nav2 + RRT + SpaceMIT EP YOLO + blockage approach + USB close confirm`。180 秒资源窗口内系统 CPU 均值为 `78.68%`，已跟踪进程合计约 `527.31%`，可用内存约 `14.34GiB`；主 YOLO 保持 SpaceMIT EP、1 秒一帧。完整运行累计 27 个 RRT goal、6 个 D435 风险事件，并完成一次 `blockage=0.8061` 的 USB 近距离确认和 RRT 恢复。
-
-地图、RRT/风险叠图、USB 核验图、结构化点位和完整资源统计见 [`docs/results/real_k1_full_chain_20260720`](docs/results/real_k1_full_chain_20260720/README.md)。当前仍保留两个待修问题：同一 blockage 的空间候选与 USB confirmed 记录需要跨阶段去重；RRT/Nav2 仍存在较多 `progress_timeout` 和角向 physical-stuck。
-
-当前隧道 / 窄通道问题主要来自规则层保守叠加：RRT 目标 clearance、Nav2 footprint/inflation 和 safety guard 的 corridor stuck/spin escape 同时限制了进入窄通道的意愿。下一步建议加入明确的 `corridor_mode`：左右近但前方仍有连续空间时，低速居中前进；只有前方稳定堵住且 odom 无进展时，才触发 180 度掉头。
-
-### K1 实机进程控制
-
-完整链路建议按“清理残留 -> 启动 SLAM/Nav2 -> 启动 YOLO/approach -> 启动 RRT”的顺序执行。所有命令均在 K1 端运行：
-
-```bash
-ssh soc@192.168.43.40
-cd /home/soc/edge-ai-robot-k1
-
-# 1. 清理旧 SLAM/Nav2/RRT/YOLO/D435/guard 进程
-bash tools/start_real_k1_rrt_nav2_mapping.sh clean
-
-# 2. 启动 SLAM + Nav2 + safety guard
-bash tools/start_real_k1_rrt_nav2_mapping.sh nav2-slam
-```
-
-另开窗口确认 Nav2 active 后，再启动风险识别和靠近链路：
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
-
-# 启动 D435 + SpaceMIT EP YOLO + risk approach 状态机
-bash tools/start_real_k1_rrt_nav2_mapping.sh risk-approach "$RUN"
-
-# 启动无限 RRT/Nav2 自由探图
-bash tools/start_real_k1_rrt_nav2_mapping.sh rrt-run-2m-unlimited "$RUN"
-```
-
-常用监视命令：
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
-
-tail -f "$RUN/rrt_unlimited.log"
-tail -f "$RUN/yolo_risk_headless.log"
-tail -f "$RUN/risk_approach.log"
-tail -f "$RUN/risk_approach/risk_approach_records.jsonl"
-watch -n 0.5 "cat $RUN/yolo_risk/alarm_state.json"
-
-ps -eo pid,pcpu,pmem,args | grep -E 'slam_toolbox|nav2_|sim_rrt|run_prelim|risk_approach|realsense|scan_safety' | grep -v grep
-```
-
-停止、零速和保存地图：
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
-
-# 只停 RRT，保留 SLAM/Nav2/YOLO
-pkill -INT -f 'sim_rrt_frontier_explorer.py' || true
-
-# 全链路零速
-bash tools/start_real_k1_rrt_nav2_mapping.sh zero
-
-# 保存当前 /map
-bash tools/start_real_k1_rrt_nav2_mapping.sh save-map "$RUN"
-
-# 完整收车
-bash tools/start_real_k1_rrt_nav2_mapping.sh clean
-```
-
-如果 `map_saver_cli` 出现 FastDDS SHM port lock，可以临时使用 UDPv4 保存地图：
-
-```bash
-cd /home/soc/edge-ai-robot-k1
-source /opt/ros/humble/setup.bash
-source ros2_ws/install/setup.bash
-RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
-mkdir -p "$RUN/maps"
-FASTDDS_BUILTIN_TRANSPORTS=UDPv4 ros2 run nav2_map_server map_saver_cli \
-  -f "$RUN/maps/map_$(date +%Y%m%d_%H%M%S)"
-```
 
 ## 更新记录
 
-- **2026-07-19**：打通 K1 实机自由探图、SpaceMIT EP YOLO 风险候选记录、blockage 靠近和近距离确认预留；修正风险点坐标系，区分 `map_point_xy_m` 与 `odom≈` 候选；新增自适应横平竖直地图 + RRT + 风险点可视化工具。
-- **2026-07-18**：完成 K1 实机约 2.5m 场地纯 RRT/Nav2/SLAM 建图验证；加入 45 度侧向微调、贴边短后退和更稳的薄壁角落处理，保存最终地图 `map_after_rrt_free_roam_stop_20260718_030446.yaml`。
-- **2026-07-17**：补充 K1 实机 2m 场地 RRT/Nav2 自动探图脚本、Windows 启动入口、保守 footprint/边界参数，并记录侧向擦碰的工程原因与修正方式。
-- **2026-07-12**：完成机械臂 MoveIt 地面任务 TCP 到达验证；以 `link4_tip_link` 作为第四截末端 TCP，1000 个保守地面工作区目标全部规划并到达，最大 TCP 误差约 7.18 mm，平均约 2.52 mm。记录见 `docs/mechanical_arm_moveit_tcp_reach_20260712.md`，本地输出位于 `outputs/moveit_arm_visual_ground_tcp_direct_marker_1000/`。
-- **2026-07-11**：完成 Ubuntu Humble 仿真自主建图录屏基线：Gazebo 履带底盘、N10P 雷达、D435、`slam_toolbox`、RRT frontier、Nav2、安全守护和 RViz 轨迹显示。
-- **2026-07-08**：整理 GitHub 公开源码提交仓库，补充代码、报告、模型、样例地图、evidence 和演示材料。
-- **2026-07-07**：根据实机场景完成 confidence + depth 联合门限调整。
-- **2026-07-06**：完成演示链路：SLAM-Frontier 自主探测、D435 YOLO、风险地图、dashboard 和 LLM 报告。
-- **2026-07-03**：完成 K1 D435 YOLO 部署流程，并验证 SpaceMIT Execution Provider 推理路径。
-- **2026-06-30**：完成机械臂 no-load 安全响应和地图门控动作接口。
+- **2026-07-20**：完成 K1 实机 `SLAM + Nav2 + RRT + SpaceMIT EP YOLO + blockage approach + USB close confirm` 完整链验证；加入拍摄时刻风险投影、多帧空间融合、有界候选内存、RRT 事件驱动重算和完整资源统计，并保存最终地图及风险可视化结果。
 
 ## 核心亮点
 
