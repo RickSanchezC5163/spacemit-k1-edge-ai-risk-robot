@@ -20,6 +20,7 @@ import json
 import math
 import sys
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -53,6 +54,14 @@ from tools.run_k1_d435_yolo_realtime_display import (  # noqa: E402
     resolve_model_input_size,
     run_inference,
     select_ort_providers,
+)
+from tools.mission_state import MissionStateStore  # noqa: E402
+from tools.risk_spatial_memory import (  # noqa: E402
+    PoseSample,
+    PoseSampleCache,
+    RiskFusionTracker,
+    Transform2D,
+    project_risk_to_map,
 )
 
 
@@ -165,6 +174,28 @@ def transform_xy_with_tf(x: float, y: float, transform: Any) -> Dict[str, float]
         "target_child_frame": transform.child_frame_id,
         "tf_yaw_rad": round(yaw, 6),
     }
+
+
+def transform_2d_from_tf(transform: Any) -> Transform2D:
+    trans = transform.transform.translation
+    rot = transform.transform.rotation
+    return Transform2D(
+        x=float(trans.x),
+        y=float(trans.y),
+        yaw=yaw_from_quat_xyzw(float(rot.x), float(rot.y), float(rot.z), float(rot.w)),
+    )
+
+
+def transform_2d_from_odom(odom: Dict[str, Any]) -> Optional[Transform2D]:
+    pose = odom.get("pose") or {}
+    position = pose.get("position") or {}
+    yaw = yaw_from_odom_dict(odom)
+    if yaw is None:
+        return None
+    try:
+        return Transform2D(float(position["x"]), float(position["y"]), float(yaw))
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def camera_intrinsics(camera_info: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
@@ -370,20 +401,72 @@ class RiskEventStore:
         map_grid_m: float,
         image_grid_px: int,
         map_write_policy: str,
+        max_candidates: int,
+        candidate_ttl_s: float,
+        index_flush_period_s: float,
+        mission_state: MissionStateStore,
     ):
         self.output_dir = output_dir
         self.map_grid_m = float(map_grid_m)
         self.image_grid_px = max(1, int(image_grid_px))
         self.map_write_policy = str(map_write_policy)
-        self.events_by_key: Dict[str, Dict[str, Any]] = {}
+        self.max_candidates = max(1, int(max_candidates))
+        self.candidate_ttl_s = max(1.0, float(candidate_ttl_s))
+        self.index_flush_period_s = max(0.0, float(index_flush_period_s))
+        self.mission_state = mission_state
+        self.events_by_key: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         self.events: List[Dict[str, Any]] = []
         self.map_points: List[Dict[str, Any]] = []
+        self.dirty = True
+        self.urgent_dirty = True
+        self.last_write_monotonic = 0.0
 
-    def dedup_key(self, det: Dict[str, Any], odom_point: Optional[Dict[str, float]]) -> str:
+    def sync_mission_state(self, key: str, event: Dict[str, Any]) -> None:
+        fusion = event.get("spatial_fusion") or {}
+        if fusion.get("confirmed"):
+            risk = dict(event)
+            risk["risk_id"] = risk.get("risk_id") or fusion.get("candidate_id") or event.get("event_id")
+            risk["candidate_key"] = key
+            risk["coordinate"] = {
+                "frame_id": "map",
+                "xy_m": fusion.get("fused_map_point_xy_m") or event.get("map_point_xy_m"),
+            }
+            risk["verification_status"] = risk.get("verification_status") or "pending_close_verify"
+            risk["arm_action_status"] = "blocked_until_close_verify"
+            self.mission_state.confirm_risk(risk)
+        else:
+            self.mission_state.update_candidate(key, event)
+
+    def prune(self) -> None:
+        now = time.monotonic()
+        expired = [
+            key
+            for key, event in self.events_by_key.items()
+            if now - float(event.get("last_seen_monotonic", now)) > self.candidate_ttl_s
+        ]
+        while len(self.events_by_key) - len(expired) > self.max_candidates:
+            oldest = next(key for key in self.events_by_key if key not in expired)
+            expired.append(oldest)
+        if not expired:
+            return
+        removed_ids = {
+            str(self.events_by_key[key].get("event_id"))
+            for key in expired
+            if key in self.events_by_key
+        }
+        for key in expired:
+            self.events_by_key.pop(key, None)
+        self.events = [event for event in self.events if str(event.get("event_id")) not in removed_ids]
+        self.map_points = [
+            point for point in self.map_points if str(point.get("event_id")) not in removed_ids
+        ]
+        self.dirty = True
+
+    def dedup_key(self, det: Dict[str, Any], spatial_point: Optional[Dict[str, float]]) -> str:
         class_name = str(det.get("class_name") or det.get("label") or "risk")
-        if odom_point:
-            ix = int(math.floor(float(odom_point["x"]) / self.map_grid_m))
-            iy = int(math.floor(float(odom_point["y"]) / self.map_grid_m))
+        if spatial_point:
+            ix = int(math.floor(float(spatial_point["x"]) / self.map_grid_m))
+            iy = int(math.floor(float(spatial_point["y"]) / self.map_grid_m))
             return f"{class_name}:map:{ix}:{iy}"
         x, y, w, h = [float(v) for v in det.get("bbox_xywh", [0, 0, 0, 0])]
         cx = int(math.floor((x + w / 2.0) / self.image_grid_px))
@@ -395,22 +478,55 @@ class RiskEventStore:
         key: str,
         event: Dict[str, Any],
         map_point: Dict[str, Any],
-    ) -> Tuple[bool, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any]]:
+        self.prune()
         existing = self.events_by_key.get(key)
         if existing is not None:
+            confidence = float(event.get("confidence") or 0.0)
+            previous_max = float(existing.get("confidence_max") or 0.0)
             existing["last_seen"] = event["first_seen"]
+            existing["last_seen_monotonic"] = time.monotonic()
             existing["seen_count"] = int(existing.get("seen_count", 1)) + 1
-            existing["confidence_max"] = max(
-                float(existing.get("confidence_max") or 0.0),
-                float(event.get("confidence") or 0.0),
-            )
+            existing["confidence_max"] = max(previous_max, confidence)
             existing["latest_distance_m"] = event.get("distance_m")
             existing["latest_odom_point_xy_m"] = map_point.get("odom_point_xy_m")
             existing["latest_map_point_xy_m"] = map_point.get("map_point_xy_m")
             existing["map_projection_status"] = map_point.get("map_projection_status")
             existing["latest_confidence"] = event.get("confidence")
-            return False, existing
+            self.events_by_key.move_to_end(key)
+            self.dirty = True
+            action = "best_updated" if confidence > previous_max else "seen"
+            if action == "best_updated":
+                existing["confidence"] = confidence
+                existing["distance_m"] = event.get("distance_m")
+                existing["odom_point_xy_m"] = event.get("odom_point_xy_m")
+                existing["map_point_xy_m"] = event.get("map_point_xy_m")
+                existing["auto_risk_gate"] = event.get("auto_risk_gate")
+                existing["approach_risk_gate"] = event.get("approach_risk_gate")
+                existing["candidate_kind"] = event.get("candidate_kind")
+                existing["best_evidence_updated_at"] = event["first_seen"]
+                replaced_map_point = False
+                for index, point in enumerate(self.map_points):
+                    if point.get("event_id") == existing.get("event_id"):
+                        replacement = dict(map_point)
+                        replacement["event_id"] = existing.get("event_id")
+                        replacement["map_point_id"] = point.get("map_point_id")
+                        self.map_points[index] = replacement
+                        replaced_map_point = True
+                        break
+                if (
+                    not replaced_map_point
+                    and self.map_write_policy == "immediate"
+                    and map_point.get("candidate_kind") == "formal"
+                    and map_point.get("map_point_xy_m")
+                ):
+                    map_point["event_id"] = existing.get("event_id")
+                    self.map_points.append(map_point)
+                self.sync_mission_state(key, existing)
+                self.urgent_dirty = True
+            return action, existing
 
+        event["last_seen_monotonic"] = time.monotonic()
         self.events_by_key[key] = event
         self.events.append(event)
         if (
@@ -419,9 +535,29 @@ class RiskEventStore:
             and map_point.get("map_point_xy_m")
         ):
             self.map_points.append(map_point)
-        return True, event
+        self.dirty = True
+        self.urgent_dirty = True
+        self.sync_mission_state(key, event)
+        self.prune()
+        return "new", event
 
-    def write_all(self) -> None:
+    def write_all(self, force: bool = False) -> None:
+        self.prune()
+        if not force and not self.dirty:
+            self.mission_state.write_if_dirty()
+            return
+        now = time.monotonic()
+        if (
+            not force
+            and not self.urgent_dirty
+            and now - self.last_write_monotonic < self.index_flush_period_s
+        ):
+            return
+        serializable_events = []
+        for event in self.events:
+            item = dict(event)
+            item.pop("last_seen_monotonic", None)
+            serializable_events.append(item)
         write_json(
             self.output_dir / "risk_event_index.json",
             {
@@ -434,9 +570,17 @@ class RiskEventStore:
                     "key_count": len(self.events_by_key),
                 },
                 "event_count": len(self.events),
-                "events": self.events,
+                "limits": {
+                    "candidate_capacity": self.max_candidates,
+                    "candidate_ttl_s": self.candidate_ttl_s,
+                },
+                "events": serializable_events,
             },
         )
+        self.dirty = False
+        self.urgent_dirty = False
+        self.last_write_monotonic = now
+        self.mission_state.write_if_dirty(force=force)
         write_json(
             self.output_dir / "risk_map_points.json",
             {
@@ -473,12 +617,22 @@ class PrelimDemoNode(Node):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.auto_risk_gates = parse_auto_risk_gates(args.auto_risk_gates)
         self.approach_risk_gates = parse_auto_risk_gates(args.approach_risk_gates)
+        self.mission_state = MissionStateStore(
+            self.output_dir / "mission_state.json",
+            max_candidates=args.max_risk_candidates,
+            candidate_ttl_s=args.risk_candidate_ttl_s,
+        )
         self.store = RiskEventStore(
             self.output_dir,
             map_grid_m=args.dedup_map_grid_m,
             image_grid_px=args.dedup_image_grid_px,
             map_write_policy=args.map_write_policy,
+            max_candidates=args.max_risk_candidates,
+            candidate_ttl_s=args.risk_candidate_ttl_s,
+            index_flush_period_s=args.risk_index_flush_period_s,
+            mission_state=self.mission_state,
         )
+        self.mission_state.write_if_dirty(force=True)
         self.errors: List[Dict[str, Any]] = []
         self.arm_candidate_count = 0
 
@@ -487,11 +641,25 @@ class PrelimDemoNode(Node):
         self.latest_camera_info: Optional[CameraInfo] = None
         self.latest_odom: Optional[Odometry] = None
         self.latest_times = {"rgb": 0.0, "depth": 0.0, "camera_info": 0.0, "odom": 0.0}
+        self.direct_frame_source = None
         self.last_infer_time = 0.0
         self.frame_count = 0
         self.inference_count = 0
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.pose_cache = PoseSampleCache(
+            duration_s=args.pose_cache_duration_s,
+            max_samples=args.pose_cache_max_samples,
+        )
+        self.last_pose_sample_monotonic = 0.0
+        self.risk_fusion = RiskFusionTracker(
+            merge_distance_m=args.risk_fusion_distance_m,
+            merge_time_s=args.risk_fusion_time_s,
+            required_observations=args.risk_fusion_required,
+            observation_window=args.risk_fusion_window,
+            max_candidates=args.max_risk_candidates,
+        )
+        self.last_pipeline_timing: Dict[str, float] = {}
 
         import onnxruntime as ort
 
@@ -522,10 +690,22 @@ class PrelimDemoNode(Node):
         self.demo_event_pub = self.create_publisher(String, args.demo_event_topic, 10)
         self.alarm_pub = self.create_publisher(String, args.alarm_topic, 10)
 
-        self.create_subscription(Image, args.rgb_topic, self._rgb_cb, 10)
-        self.create_subscription(Image, args.depth_topic, self._depth_cb, 10)
-        self.create_subscription(CameraInfo, args.camera_info_topic, self._camera_info_cb, 10)
+        if args.frame_source == "realsense":
+            from tools.k1_realsense_latest_frame import RealSenseLatestFrameSource
+
+            self.direct_frame_source = RealSenseLatestFrameSource(
+                width=args.realsense_width,
+                height=args.realsense_height,
+                fps=args.realsense_fps,
+                slots=args.realsense_frame_slots,
+                wait_timeout_ms=args.realsense_wait_timeout_ms,
+            ).start()
+        else:
+            self.create_subscription(Image, args.rgb_topic, self._rgb_cb, 1)
+            self.create_subscription(Image, args.depth_topic, self._depth_cb, 1)
+            self.create_subscription(CameraInfo, args.camera_info_topic, self._camera_info_cb, 1)
         self.create_subscription(Odometry, args.odom_topic, self._odom_cb, 20)
+        self.create_subscription(String, args.approach_status_topic, self._approach_status_cb, 10)
         self.timer = self.create_timer(max(0.05, float(args.timer_period_s)), self._timer_cb)
 
         write_json(
@@ -544,6 +724,19 @@ class PrelimDemoNode(Node):
                     "ort_inter_op_threads": args.ort_inter_op_threads,
                     "ort_allow_spinning": args.ort_allow_spinning,
                     "no_visuals": args.no_visuals,
+                    "frame_source": args.frame_source,
+                    "realsense_frame_slots": args.realsense_frame_slots,
+                    "risk_candidate_capacity": args.max_risk_candidates,
+                    "risk_candidate_ttl_s": args.risk_candidate_ttl_s,
+                    "depth_alignment": "on_detection_only",
+                    "pose_cache_duration_s": args.pose_cache_duration_s,
+                    "pose_sample_hz": args.pose_sample_hz,
+                    "risk_fusion": {
+                        "distance_m": args.risk_fusion_distance_m,
+                        "time_s": args.risk_fusion_time_s,
+                        "required": args.risk_fusion_required,
+                        "window": args.risk_fusion_window,
+                    },
                 },
                 "topics": {
                     "rgb": args.rgb_topic,
@@ -557,7 +750,7 @@ class PrelimDemoNode(Node):
                 "frames": {
                     "map": args.map_frame,
                     "odom": args.odom_frame,
-                    "risk_projection": "base_point -> odom_point via /odom, then odom_point -> map_point via TF when available",
+                    "risk_projection": "camera -> base -> odom -> map using the capture-time PoseSample cache",
                 },
                 "cmd_vel_published_by_this_node": False,
                 "arm_response_mode": args.arm_response_mode,
@@ -597,13 +790,92 @@ class PrelimDemoNode(Node):
         self.latest_times["camera_info"] = time.monotonic()
 
     def _odom_cb(self, msg: Odometry) -> None:
+        callback_monotonic = time.monotonic()
         self.latest_odom = msg
-        self.latest_times["odom"] = time.monotonic()
+        self.latest_times["odom"] = callback_monotonic
+        sample_period = 1.0 / max(0.1, float(self.args.pose_sample_hz))
+        if callback_monotonic - self.last_pose_sample_monotonic < sample_period:
+            return
+        odom = odom_to_dict(msg)
+        odom_to_base = transform_2d_from_odom(odom)
+        if odom_to_base is None:
+            return
+        if self.args.map_frame == self.args.odom_frame:
+            map_to_odom = Transform2D(0.0, 0.0, 0.0)
+            map_tf_valid = True
+        else:
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    self.args.map_frame,
+                    self.args.odom_frame,
+                    rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=0.0),
+                )
+                map_to_odom = transform_2d_from_tf(transform)
+                map_tf_valid = True
+            except TransformException:
+                map_to_odom = None
+                map_tf_valid = False
+        stamp = msg.header.stamp
+        self.pose_cache.append(
+            PoseSample(
+                monotonic_s=callback_monotonic,
+                ros_time_ns=int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec),
+                map_to_odom=map_to_odom,
+                odom_to_base=odom_to_base,
+                linear_velocity_mps=float(msg.twist.twist.linear.x),
+                angular_velocity_rps=float(msg.twist.twist.angular.z),
+                map_tf_valid=map_tf_valid,
+            )
+        )
+        self.last_pose_sample_monotonic = callback_monotonic
+
+    def _approach_status_cb(self, msg: String) -> None:
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+        confirmed = payload.get("confirmed_risk_map_point")
+        if payload.get("state") != "confirmed_map_point_written" or not isinstance(confirmed, dict):
+            return
+        confirmed = dict(confirmed)
+        confirmed["risk_id"] = confirmed.get("risk_id") or confirmed.get("event_id")
+        confirmed["coordinate"] = {
+            "frame_id": "odom",
+            "xy_m": confirmed.get("odom_point_xy_m"),
+            "map_point_xy_m": confirmed.get("map_point_xy_m"),
+        }
+        close_confirm = confirmed.get("close_usb_confirm") or {}
+        confirmed["evidence_refs"] = [
+            value
+            for value in (
+                close_confirm.get("capture_path"),
+                close_confirm.get("result_path"),
+            )
+            if value
+        ]
+        self.mission_state.confirm_risk(confirmed)
+        self.mission_state.write_if_dirty()
 
     def freshness(self) -> Dict[str, Any]:
         now = time.monotonic()
         result = {}
-        for name in ("rgb", "depth", "camera_info", "odom"):
+        if self.direct_frame_source is not None:
+            source_status = self.direct_frame_source.status()
+            age = source_status.get("latest_age_s")
+            fresh = age is not None and float(age) <= self.args.fresh_timeout_s
+            for name in ("rgb", "depth", "camera_info"):
+                result[name] = {"fresh": fresh, "age_s": age}
+            result["frame_source"] = source_status
+        else:
+            for name in ("rgb", "depth", "camera_info"):
+                latest = getattr(self, f"latest_{name}", None)
+                age = None if latest is None else round(now - self.latest_times[name], 3)
+                result[name] = {
+                    "fresh": latest is not None and age is not None and age <= self.args.fresh_timeout_s,
+                    "age_s": age,
+                }
+        for name in ("odom",):
             latest = getattr(self, f"latest_{name}", None)
             age = None if latest is None else round(now - self.latest_times[name], 3)
             result[name] = {
@@ -661,17 +933,40 @@ class PrelimDemoNode(Node):
             self.get_logger().warn(f"process_frame failed: {exc}")
 
     def process_frame(self) -> None:
-        assert self.latest_rgb is not None
-        assert self.latest_depth is not None
-        assert self.latest_camera_info is not None
-
-        rgb_arr = canonical_rgb(image_msg_to_array(self.latest_rgb), self.latest_rgb.encoding)
-        depth_raw = image_msg_to_array(self.latest_depth)
-        depth_m, depth_scale_m = depth_to_meters(depth_raw, self.latest_depth.encoding, self.args.depth_scale_m)
-        camera_info = camera_info_to_dict(self.latest_camera_info)
+        pipeline_started = time.perf_counter()
+        capture_started = pipeline_started
+        direct_frame = None
+        if self.direct_frame_source is not None:
+            direct_frame = self.direct_frame_source.get_latest(copy=True)
+            if direct_frame is None:
+                return
+            frame_bgr = direct_frame.color_bgr
+            rgb_arr = frame_bgr[:, :, ::-1].copy()
+            depth_raw = None
+            depth_m = None
+            depth_scale_m = float(direct_frame.depth_scale_m)
+            camera_info = direct_frame.camera_info
+            capture_monotonic = float(direct_frame.captured_monotonic)
+        else:
+            assert self.latest_rgb is not None
+            assert self.latest_depth is not None
+            assert self.latest_camera_info is not None
+            rgb_arr = canonical_rgb(image_msg_to_array(self.latest_rgb), self.latest_rgb.encoding)
+            depth_raw = image_msg_to_array(self.latest_depth)
+            depth_m, depth_scale_m = depth_to_meters(
+                depth_raw, self.latest_depth.encoding, self.args.depth_scale_m
+            )
+            camera_info = camera_info_to_dict(self.latest_camera_info)
+            frame_bgr = rgb_arr[:, :, ::-1].copy()
+            capture_monotonic = float(self.latest_times["rgb"])
         odom = odom_to_dict(self.latest_odom)
-        frame_bgr = rgb_arr[:, :, ::-1].copy()
+        capture_ms = (time.perf_counter() - capture_started) * 1000.0
+        pose_snapshot = self.pose_cache.snapshot_at(
+            capture_monotonic,
+            max_age_s=self.args.pose_max_age_s,
+        )
 
+        inference_started = time.perf_counter()
         detections, latency_ms = run_inference(
             self.session,
             self.input_name,
@@ -679,29 +974,77 @@ class PrelimDemoNode(Node):
             frame_bgr,
             self.args,
         )
+        inference_wall_ms = (time.perf_counter() - inference_started) * 1000.0
         self.frame_count += 1
         self.inference_count += 1
         if not detections:
+            self.last_pipeline_timing = {
+                "capture_ms": round(capture_ms, 3),
+                "align_ms": 0.0,
+                "inference_wall_ms": round(inference_wall_ms, 3),
+                "total_ms": round((time.perf_counter() - pipeline_started) * 1000.0, 3),
+            }
             if not self.args.no_visuals:
                 draw_overlay(frame_bgr, [], self.output_dir / "latest_overlay.png")
             self.write_alarm_state(None, [], latency_ms)
             return
 
+        align_ms = 0.0
+        if direct_frame is not None:
+            aligned = self.direct_frame_source.align_depth(direct_frame, copy=True)
+            depth_raw = aligned.depth_raw
+            depth_m = depth_raw.astype(np.float32) * depth_scale_m
+            camera_info = aligned.camera_info
+            align_ms = float(aligned.alignment_latency_ms)
+        assert depth_raw is not None
+        assert depth_m is not None
+
         localized: List[Dict[str, Any]] = []
         for det in detections:
-            loc = localize_bbox_in_memory(
-                det.get("bbox_xywh", []),
-                depth_m,
-                camera_info,
-                self.args.min_depth_m,
-                self.args.max_depth_m,
+            observation = project_risk_to_map(
+                class_name=str(det.get("class_name") or det.get("label") or "risk"),
+                confidence=float(det.get("confidence") or 0.0),
+                bbox_xywh=det.get("bbox_xywh", []),
+                aligned_depth_m=depth_m,
+                camera_info=camera_info,
+                observation_snapshot=pose_snapshot,
+                min_depth_m=self.args.min_depth_m,
+                max_depth_m=self.args.max_depth_m,
             )
+            loc = observation.as_dict()
             det = dict(det)
             det["depth_localization"] = loc
+            det["risk_observation"] = loc
             if loc.get("depth_status") == "valid":
                 det["depth_median_m"] = loc.get("depth_median_m")
                 det["bbox_valid_depth_ratio"] = loc.get("bbox_valid_depth_ratio")
                 det["camera_point_xyz_m"] = loc.get("camera_point_xyz_m")
+                det["base_point_xyz_m"] = loc.get("base_point_xyz_m")
+                det["odom_point_xy_m"] = loc.get("odom_point_xy_m")
+                det["map_point_xy_m"] = loc.get("map_point_xy_m")
+            fusion = self.risk_fusion.update(observation)
+            det["spatial_fusion"] = fusion
+            candidate_id = fusion.get("candidate_id")
+            if candidate_id:
+                state_record = {
+                    "risk_id": candidate_id,
+                    "candidate_key": candidate_id,
+                    "class_name": observation.class_name,
+                    "confidence": observation.confidence,
+                    "coordinate": {
+                        "frame_id": self.args.map_frame,
+                        "xy_m": fusion.get("fused_map_point_xy_m"),
+                    },
+                    "spatial_fusion": fusion,
+                    "observation": loc,
+                    "verification_status": "pending_close_verify",
+                    "approach_status": "pending",
+                    "arm_action_status": "blocked_until_close_verify",
+                }
+                if fusion.get("confirmed"):
+                    self.mission_state.confirm_risk(state_record)
+                else:
+                    self.mission_state.update_candidate(str(candidate_id), state_record)
             localized.append(det)
 
         localized = sorted(localized, key=lambda item: float(item.get("confidence", 0.0)), reverse=True)
@@ -712,9 +1055,10 @@ class PrelimDemoNode(Node):
             det["auto_risk_gate"] = gate_result
             approach_gate_result = evaluate_auto_risk_gate(det, self.approach_risk_gates)
             det["approach_risk_gate"] = approach_gate_result
-            if gate_result.get("allowed"):
+            spatially_confirmed = bool((det.get("spatial_fusion") or {}).get("confirmed"))
+            if gate_result.get("allowed") and spatially_confirmed:
                 formal_candidates.append(det)
-            if approach_gate_result.get("allowed"):
+            if approach_gate_result.get("allowed") and spatially_confirmed:
                 approach_candidates.append(det)
 
         if not self.args.no_visuals:
@@ -736,6 +1080,12 @@ class PrelimDemoNode(Node):
             self.write_episode_report(status="running")
             self.write_risk_report()
             self.write_dashboard()
+        self.last_pipeline_timing = {
+            "capture_ms": round(capture_ms, 3),
+            "align_ms": round(align_ms, 3),
+            "inference_wall_ms": round(inference_wall_ms, 3),
+            "total_ms": round((time.perf_counter() - pipeline_started) * 1000.0, 3),
+        }
         self.write_alarm_state(latest_alarm, localized, latency_ms)
 
     def transient_alarm_from_detection(self, det: Dict[str, Any]) -> Dict[str, Any]:
@@ -772,16 +1122,25 @@ class PrelimDemoNode(Node):
         event_type, risk_level, recommended_action = risk_info_for_class(class_name)
         formal_allowed = bool((det.get("auto_risk_gate") or {}).get("allowed"))
         candidate_kind = "formal" if formal_allowed else "approach_candidate"
-        camera_point = det.get("camera_point_xyz_m")
-        base_point = camera_point_to_base_point(camera_point) if isinstance(camera_point, dict) else None
-        odom_point = base_point_to_odom_xy(base_point, odom) if base_point and odom else None
-        map_point, map_projection = self.odom_point_to_map_xy(odom_point)
-        projection_status = "projected" if odom_point else "missing_pose_or_depth"
-        key = self.store.dedup_key(det, odom_point)
+        observation = det.get("risk_observation") or {}
+        fusion = det.get("spatial_fusion") or {}
+        camera_point = observation.get("camera_point_xyz_m")
+        base_point = observation.get("base_point_xyz_m")
+        odom_point = observation.get("odom_point_xy_m")
+        map_point_xy = fusion.get("fused_map_point_xy_m") or observation.get("map_point_xy_m")
+        map_projection = {
+            "status": observation.get("projection_status"),
+            "source_frame": "d435_color_optical_frame",
+            "target_frame": self.args.map_frame,
+            "capture_ros_time_ns": observation.get("capture_ros_time_ns"),
+            "pose_quality": observation.get("pose_quality"),
+        }
+        projection_status = str(observation.get("projection_status") or "missing_pose_or_depth")
+        key = str(fusion.get("candidate_id") or self.store.dedup_key(det, map_point_xy))
         event_id = f"risk_event_{now_id()}"
         distance_m = det.get("depth_median_m")
 
-        map_point = {
+        map_point_record = {
             "map_point_id": f"map_point_{len(self.store.map_points) + 1:03d}",
             "event_id": event_id,
             "class_name": class_name,
@@ -793,13 +1152,14 @@ class PrelimDemoNode(Node):
             "camera_point_xyz_m": camera_point,
             "base_point_xyz_m": base_point,
             "odom_point_xy_m": odom_point,
-            "map_point_xy_m": map_point,
+            "map_point_xy_m": map_point_xy,
             "projection_status": projection_status,
             "map_projection_status": map_projection,
-            "projection_mode": "d435_bbox_depth_odom_approx",
-            "map_projection_mode": "tf_map_from_odom" if map_point else "odom_only",
+            "projection_mode": "capture_time_camera_base_odom_map_tf_chain",
+            "map_projection_mode": "capture_time_tf_chain" if map_point_xy else "unavailable",
             "axis_mapping": AXIS_MAPPING,
-            "robot_odom_pose": (odom or {}).get("pose") if odom else None,
+            "observation_snapshot": observation.get("pose_snapshot"),
+            "spatial_fusion": fusion,
             "auto_risk_gate": det.get("auto_risk_gate"),
             "approach_risk_gate": det.get("approach_risk_gate"),
             "candidate_kind": candidate_kind,
@@ -831,17 +1191,23 @@ class PrelimDemoNode(Node):
             "projection_status": projection_status,
             "odom_point_xy_m": odom_point,
             "latest_odom_point_xy_m": odom_point,
-            "map_point_xy_m": map_point,
-            "latest_map_point_xy_m": map_point,
+            "map_point_xy_m": map_point_xy,
+            "latest_map_point_xy_m": map_point_xy,
             "map_projection_status": map_projection,
+            "spatial_fusion": fusion,
+            "risk_id": fusion.get("candidate_id"),
             "manual_arm_response_candidate": None,
         }
-        is_new, stored = self.store.register(key, event, map_point)
-        if not is_new:
+        action, stored = self.store.register(key, event, map_point_record)
+        if action == "seen":
             passive_event = self.maybe_publish_passive_close_update(stored, event, distance_m)
             if passive_event is not None:
                 return passive_event
             return None
+
+        if action == "best_updated":
+            event_id = str(stored.get("event_id"))
+            map_point_record["event_id"] = event_id
 
         capture_dir = self.output_dir / "captures" / event_id
         capture_dir.mkdir(parents=True, exist_ok=True)
@@ -861,7 +1227,7 @@ class PrelimDemoNode(Node):
         draw_overlay(rgb_arr[:, :, ::-1].copy(), [det], overlay_path)
         write_json(camera_info_path, camera_info)
         write_json(odom_path, odom)
-        write_json(map_point_path, map_point)
+        write_json(map_point_path, map_point_record)
         write_json(
             detection_path,
             {
@@ -890,14 +1256,23 @@ class PrelimDemoNode(Node):
                 "candidate_map_point_path": str(map_point_path),
             }
         )
+        stored["best_evidence"] = {
+            "confidence": det.get("confidence"),
+            "rgb_path": str(rgb_path),
+            "overlay_path": str(overlay_path),
+            "risk_detection_path": str(detection_path),
+            "candidate_map_point_path": str(map_point_path),
+        }
+        self.mission_state.update_candidate(key, stored)
         if self.args.map_write_policy == "immediate":
             stored["risk_map_point_path"] = str(map_point_path)
         stored["manual_arm_response_candidate"] = self.build_manual_arm_candidate(stored, odom)
         write_json(event_path, stored)
-        append_jsonl(self.output_dir / "risk_events.jsonl", stored)
-        self.publish_event(stored)
-        if stored.get("candidate_kind") == "formal":
-            self.publish_alarm(stored)
+        if action == "new":
+            append_jsonl(self.output_dir / "risk_events.jsonl", stored)
+            self.publish_event(stored)
+            if stored.get("candidate_kind") == "formal":
+                self.publish_alarm(stored)
         self.get_logger().info(
             "new risk event %s class=%s kind=%s level=%s projection=%s"
             % (event_id, class_name, candidate_kind, risk_level, projection_status)
@@ -1087,6 +1462,8 @@ class PrelimDemoNode(Node):
                     "class_name": det.get("class_name"),
                     "confidence": det.get("confidence"),
                     "distance_m": det.get("depth_median_m"),
+                    "projection_status": (det.get("risk_observation") or {}).get("projection_status"),
+                    "spatial_fusion": det.get("spatial_fusion"),
                     "auto_risk_gate": det.get("auto_risk_gate"),
                     "approach_risk_gate": det.get("approach_risk_gate"),
                 }
@@ -1094,6 +1471,10 @@ class PrelimDemoNode(Node):
             ],
             "latency_ms": None if latency_ms is None else round(float(latency_ms), 3),
             "infer_fps": None if not latency_ms else round(1000.0 / float(latency_ms), 3),
+            "pipeline_timing_ms": self.last_pipeline_timing,
+            "frame_source": (
+                self.direct_frame_source.status() if self.direct_frame_source is not None else {"source": "ros"}
+            ),
             "event_count": len(self.store.events),
             "arm_candidate_count": self.arm_candidate_count,
         }
@@ -1407,7 +1788,9 @@ This directory contains live demo evidence generated by:
         write_text(self.output_dir / "README.md", text)
 
     def finalize(self) -> None:
-        self.store.write_all()
+        if self.direct_frame_source is not None:
+            self.direct_frame_source.stop()
+        self.store.write_all(force=True)
         self.write_map_snapshot()
         self.write_episode_report(status="succeeded" if self.store.events else "completed_no_events")
         self.write_risk_report()
@@ -1429,6 +1812,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--timer-period-s", type=float, default=0.10)
     parser.add_argument("--inference-period-s", type=float, default=0.35)
     parser.add_argument("--fresh-timeout-s", type=float, default=2.0)
+    parser.add_argument("--frame-source", choices=["ros", "realsense"], default="ros")
+    parser.add_argument("--realsense-width", type=int, default=640)
+    parser.add_argument("--realsense-height", type=int, default=480)
+    parser.add_argument("--realsense-fps", type=int, default=15)
+    parser.add_argument("--realsense-frame-slots", type=int, default=3)
+    parser.add_argument("--realsense-wait-timeout-ms", type=int, default=1500)
     parser.add_argument(
         "--no-visuals",
         action="store_true",
@@ -1469,12 +1858,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--map-frame", default="map")
     parser.add_argument("--odom-frame", default="odom")
     parser.add_argument("--tf-lookup-timeout-s", type=float, default=0.05)
+    parser.add_argument("--pose-cache-duration-s", type=float, default=3.0)
+    parser.add_argument("--pose-cache-max-samples", type=int, default=96)
+    parser.add_argument("--pose-sample-hz", type=float, default=10.0)
+    parser.add_argument("--pose-max-age-s", type=float, default=0.20)
     parser.add_argument("--event-topic", default="/perception/mock_event")
     parser.add_argument("--demo-event-topic", default="/prelim_demo/risk_event")
     parser.add_argument("--alarm-topic", default="/prelim_demo/alarm")
+    parser.add_argument("--approach-status-topic", default="/risk/approach_status")
 
     parser.add_argument("--dedup-map-grid-m", type=float, default=0.40)
     parser.add_argument("--dedup-image-grid-px", type=int, default=80)
+    parser.add_argument("--max-risk-candidates", type=int, default=64)
+    parser.add_argument("--risk-candidate-ttl-s", type=float, default=60.0)
+    parser.add_argument("--risk-index-flush-period-s", type=float, default=5.0)
+    parser.add_argument("--risk-fusion-distance-m", type=float, default=0.25)
+    parser.add_argument("--risk-fusion-time-s", type=float, default=2.0)
+    parser.add_argument("--risk-fusion-required", type=int, default=2)
+    parser.add_argument("--risk-fusion-window", type=int, default=3)
     parser.add_argument(
         "--map-write-policy",
         choices=["immediate", "approach_confirmed"],

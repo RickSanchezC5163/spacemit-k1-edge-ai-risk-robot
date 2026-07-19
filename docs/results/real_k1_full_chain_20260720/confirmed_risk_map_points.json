@@ -1,0 +1,75 @@
+{
+  "schema_version": "confirmed_risk_map_points_v1",
+  "updated_at": "2026-07-19T17:19:00Z",
+  "confirm_map_confidence": 0.6,
+  "risk_map_points": [
+    {
+      "schema_version": "confirmed_risk_map_point_v1",
+      "confirmed_at": "2026-07-19T17:19:00Z",
+      "source": "real_k1_risk_approach_from_event",
+      "event_id": "risk_event_20260719T171829228",
+      "class_name": "blockage",
+      "event_type": "blocked_path",
+      "risk_level": "high",
+      "confidence": 0.8061,
+      "initial_event_confidence": 0.7243,
+      "distance_m": 0.502,
+      "odom_point_xy_m": {
+        "x": -0.0635,
+        "y": 0.4581
+      },
+      "approach_goal": null,
+      "nav_status": "already_near",
+      "confirmation_rule": {
+        "close_usb_confidence_gte": 0.6,
+        "source": "usb_close_confirm",
+        "nav2_approach_result": "already_near"
+      },
+      "close_usb_confirm": {
+        "device": "/dev/video26",
+        "output_dir": "/home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/risk_approach/close_usb_confirm_risk_event_20260719T171829228",
+        "image_path": "/home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/risk_approach/close_usb_confirm_risk_event_20260719T171829228/usb_frame.png",
+        "model": "models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx",
+        "capture_ok": true,
+        "inference_ok": true,
+        "capture_returncode": 0,
+        "capture_stdout": "",
+        "capture_stderr": "",
+        "inference_returncode": 0,
+        "inference_stdout": "*************** EP Error ***************\nEP Error Unknown Provider Type: SpaceMITExecutionProvider when using ['SpaceMITExecutionProvider', 'CPUExecutionProvider']\nFalling back to ['CPUExecutionProvider'] and retrying.\n****************************************\n{\n  \"risk_detection_json\": \"/home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/risk_approach/close_usb_confirm_risk_event_20260719T171829228/yolo/risk_detection.json\",\n  \"detections\": 1,\n  \"policy_risk_fields\": {\n    \"risk_detected\": true,\n    \"risk_confidence\": 0.8061,\n    \"risk_class_id\": 3,\n    \"risk_class_name\": \"blockage\",\n    \"risk_distance_m\": null,\n    \"risk_source\": \"yolov8n_onnx_cpu\"\n  },\n  \"online_api_used\": false,\n  \"latency_ms\": 4497.814,\n  \"fps\": 0.222\n}",
+        "inference_stderr": "/usr/lib/python3.12/dist-packages/onnxruntime/capi/onnxruntime_inference_collection.py:123: UserWarning: Specified provider 'SpaceMITExecutionProvider' is not in available provider names.Available providers: 'CPUExecutionProvider'\n  warnings.warn(",
+        "risk_detection_json": "/home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/risk_approach/close_usb_confirm_risk_event_20260719T171829228/yolo/risk_detection.json",
+        "close_confirm_threshold": 0.6,
+        "close_confirmed_for_mapping": true,
+        "close_confirm_reason": "passed_close_usb_confidence",
+        "close_confirm_max_confidence": 0.8061,
+        "close_confirm_detections": [
+          {
+            "class_name": "blockage",
+            "confidence": 0.8061,
+            "bbox_xywh": [
+              263.43,
+              321.23,
+              52.1,
+              48.9
+            ]
+          }
+        ],
+        "close_confirm_best_detection": {
+          "class_name": "blockage",
+          "confidence": 0.8061,
+          "bbox_xywh": [
+            263.43,
+            321.23,
+            52.1,
+            48.9
+          ]
+        },
+        "close_confirm_class_match": true
+      },
+      "semantic_mode": "approach_then_confirm",
+      "recommended_action": "approach_then_arm_candidate",
+      "arm_operation_semantic": "blockage_response_candidate"
+    }
+  ]
+}

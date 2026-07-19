@@ -104,6 +104,7 @@ def generate_launch_description():
     nav2_cmd_vel = LaunchConfiguration("nav2_cmd_vel")
     guarded_cmd_vel = LaunchConfiguration("guarded_cmd_vel")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    odom_topic = LaunchConfiguration("odom_topic")
     front_collision_corridor_half_width_m = LaunchConfiguration(
         "front_collision_corridor_half_width_m"
     )
@@ -140,6 +141,29 @@ def generate_launch_description():
     corridor_stuck_spin_front_sector_deg = LaunchConfiguration("corridor_stuck_spin_front_sector_deg")
     corridor_stuck_spin_require_sides = LaunchConfiguration("corridor_stuck_spin_require_sides")
     corridor_stuck_spin_side_blocked_m = LaunchConfiguration("corridor_stuck_spin_side_blocked_m")
+    enable_corridor_trial = LaunchConfiguration("enable_corridor_trial")
+    corridor_trial_center_half_width_m = LaunchConfiguration("corridor_trial_center_half_width_m")
+    corridor_trial_enter_front_p10_m = LaunchConfiguration("corridor_trial_enter_front_p10_m")
+    corridor_trial_keep_front_p10_m = LaunchConfiguration("corridor_trial_keep_front_p10_m")
+    corridor_trial_side_near_m = LaunchConfiguration("corridor_trial_side_near_m")
+    corridor_trial_enter_stable_s = LaunchConfiguration("corridor_trial_enter_stable_s")
+    corridor_trial_exit_stable_s = LaunchConfiguration("corridor_trial_exit_stable_s")
+    corridor_trial_forward_intent_mps = LaunchConfiguration("corridor_trial_forward_intent_mps")
+    corridor_trial_max_linear_mps = LaunchConfiguration("corridor_trial_max_linear_mps")
+    corridor_trial_max_angular_radps = LaunchConfiguration("corridor_trial_max_angular_radps")
+    corridor_trial_wall_turn_limit_radps = LaunchConfiguration(
+        "corridor_trial_wall_turn_limit_radps"
+    )
+    corridor_trial_progress_window_s = LaunchConfiguration("corridor_trial_progress_window_s")
+    corridor_trial_min_forward_progress_m = LaunchConfiguration(
+        "corridor_trial_min_forward_progress_m"
+    )
+    corridor_trial_blocked_front_p10_m = LaunchConfiguration("corridor_trial_blocked_front_p10_m")
+    corridor_trial_blocked_stable_s = LaunchConfiguration("corridor_trial_blocked_stable_s")
+    corridor_trial_stop_s = LaunchConfiguration("corridor_trial_stop_s")
+    corridor_trial_rear_clear_m = LaunchConfiguration("corridor_trial_rear_clear_m")
+    corridor_trial_max_recoveries = LaunchConfiguration("corridor_trial_max_recoveries")
+    corridor_trial_odom_timeout_s = LaunchConfiguration("corridor_trial_odom_timeout_s")
     enable_escape_reverse = LaunchConfiguration("enable_escape_reverse")
     escape_reverse_trigger_m = LaunchConfiguration("escape_reverse_trigger_m")
     escape_reverse_clear_m = LaunchConfiguration("escape_reverse_clear_m")
@@ -174,11 +198,12 @@ def generate_launch_description():
             DeclareLaunchArgument("nav2_cmd_vel", default_value="/cmd_vel_raw"),
             DeclareLaunchArgument("guarded_cmd_vel", default_value="/cmd_vel_guarded"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
+            DeclareLaunchArgument("odom_topic", default_value="/odom"),
             DeclareLaunchArgument("front_collision_corridor_half_width_m", default_value="0.26"),
-            DeclareLaunchArgument("front_collision_min_x_m", default_value="0.02"),
+            DeclareLaunchArgument("front_collision_min_x_m", default_value="0.12"),
             DeclareLaunchArgument("micro_adjust_sector_deg", default_value="45.0"),
-            DeclareLaunchArgument("micro_adjust_trigger_m", default_value="0.22"),
-            DeclareLaunchArgument("micro_adjust_clear_m", default_value="0.30"),
+            DeclareLaunchArgument("micro_adjust_trigger_m", default_value="0.28"),
+            DeclareLaunchArgument("micro_adjust_clear_m", default_value="0.34"),
             DeclareLaunchArgument("micro_adjust_direction_deadband_m", default_value="0.03"),
             DeclareLaunchArgument("micro_adjust_direction_latch_s", default_value="1.50"),
             DeclareLaunchArgument("enable_spin_escape", default_value="true"),
@@ -200,10 +225,29 @@ def generate_launch_description():
             DeclareLaunchArgument("corridor_stuck_spin_front_sector_deg", default_value="20.0"),
             DeclareLaunchArgument("corridor_stuck_spin_require_sides", default_value="true"),
             DeclareLaunchArgument("corridor_stuck_spin_side_blocked_m", default_value="0.32"),
+            DeclareLaunchArgument("enable_corridor_trial", default_value="true"),
+            DeclareLaunchArgument("corridor_trial_center_half_width_m", default_value="0.10"),
+            DeclareLaunchArgument("corridor_trial_enter_front_p10_m", default_value="0.40"),
+            DeclareLaunchArgument("corridor_trial_keep_front_p10_m", default_value="0.34"),
+            DeclareLaunchArgument("corridor_trial_side_near_m", default_value="0.40"),
+            DeclareLaunchArgument("corridor_trial_enter_stable_s", default_value="0.50"),
+            DeclareLaunchArgument("corridor_trial_exit_stable_s", default_value="0.80"),
+            DeclareLaunchArgument("corridor_trial_forward_intent_mps", default_value="0.04"),
+            DeclareLaunchArgument("corridor_trial_max_linear_mps", default_value="0.24"),
+            DeclareLaunchArgument("corridor_trial_max_angular_radps", default_value="0.16"),
+            DeclareLaunchArgument("corridor_trial_wall_turn_limit_radps", default_value="0.06"),
+            DeclareLaunchArgument("corridor_trial_progress_window_s", default_value="2.50"),
+            DeclareLaunchArgument("corridor_trial_min_forward_progress_m", default_value="0.04"),
+            DeclareLaunchArgument("corridor_trial_blocked_front_p10_m", default_value="0.30"),
+            DeclareLaunchArgument("corridor_trial_blocked_stable_s", default_value="0.80"),
+            DeclareLaunchArgument("corridor_trial_stop_s", default_value="0.40"),
+            DeclareLaunchArgument("corridor_trial_rear_clear_m", default_value="0.18"),
+            DeclareLaunchArgument("corridor_trial_max_recoveries", default_value="2"),
+            DeclareLaunchArgument("corridor_trial_odom_timeout_s", default_value="0.60"),
             DeclareLaunchArgument("enable_escape_reverse", default_value="true"),
             DeclareLaunchArgument("escape_reverse_trigger_m", default_value="0.16"),
             DeclareLaunchArgument("escape_reverse_clear_m", default_value="0.24"),
-            DeclareLaunchArgument("escape_reverse_linear_x", default_value="-0.08"),
+            DeclareLaunchArgument("escape_reverse_linear_x", default_value="-0.14"),
             DeclareLaunchArgument("escape_reverse_angular_z", default_value="0.20"),
             DeclareLaunchArgument("escape_reverse_max_s", default_value="0.80"),
             DeclareLaunchArgument("escape_reverse_cooldown_s", default_value="0.40"),
@@ -211,7 +255,7 @@ def generate_launch_description():
             DeclareLaunchArgument("emergency_stop_m", default_value="0.45"),
             DeclareLaunchArgument("slow_down_m", default_value="1.60"),
             DeclareLaunchArgument("approach_stop_m", default_value="1.60"),
-            DeclareLaunchArgument("min_effective_forward", default_value="0.08"),
+            DeclareLaunchArgument("min_effective_forward", default_value="0.12"),
             DeclareLaunchArgument("clear_max_linear", default_value="0.30"),
             DeclareLaunchArgument("soft_max_linear", default_value="0.30"),
             DeclareLaunchArgument(
@@ -225,6 +269,7 @@ def generate_launch_description():
                 launch_arguments={
                     "input_cmd_vel": nav2_cmd_vel,
                     "guarded_cmd_vel": guarded_cmd_vel,
+                    "odom_topic": odom_topic,
                     "front_collision_corridor_half_width_m": front_collision_corridor_half_width_m,
                     "front_collision_min_x_m": front_collision_min_x_m,
                     "micro_adjust_sector_deg": micro_adjust_sector_deg,
@@ -255,6 +300,25 @@ def generate_launch_description():
                     "corridor_stuck_spin_front_sector_deg": corridor_stuck_spin_front_sector_deg,
                     "corridor_stuck_spin_require_sides": corridor_stuck_spin_require_sides,
                     "corridor_stuck_spin_side_blocked_m": corridor_stuck_spin_side_blocked_m,
+                    "enable_corridor_trial": enable_corridor_trial,
+                    "corridor_trial_center_half_width_m": corridor_trial_center_half_width_m,
+                    "corridor_trial_enter_front_p10_m": corridor_trial_enter_front_p10_m,
+                    "corridor_trial_keep_front_p10_m": corridor_trial_keep_front_p10_m,
+                    "corridor_trial_side_near_m": corridor_trial_side_near_m,
+                    "corridor_trial_enter_stable_s": corridor_trial_enter_stable_s,
+                    "corridor_trial_exit_stable_s": corridor_trial_exit_stable_s,
+                    "corridor_trial_forward_intent_mps": corridor_trial_forward_intent_mps,
+                    "corridor_trial_max_linear_mps": corridor_trial_max_linear_mps,
+                    "corridor_trial_max_angular_radps": corridor_trial_max_angular_radps,
+                    "corridor_trial_wall_turn_limit_radps": corridor_trial_wall_turn_limit_radps,
+                    "corridor_trial_progress_window_s": corridor_trial_progress_window_s,
+                    "corridor_trial_min_forward_progress_m": corridor_trial_min_forward_progress_m,
+                    "corridor_trial_blocked_front_p10_m": corridor_trial_blocked_front_p10_m,
+                    "corridor_trial_blocked_stable_s": corridor_trial_blocked_stable_s,
+                    "corridor_trial_stop_s": corridor_trial_stop_s,
+                    "corridor_trial_rear_clear_m": corridor_trial_rear_clear_m,
+                    "corridor_trial_max_recoveries": corridor_trial_max_recoveries,
+                    "corridor_trial_odom_timeout_s": corridor_trial_odom_timeout_s,
                     "enable_escape_reverse": enable_escape_reverse,
                     "escape_reverse_trigger_m": escape_reverse_trigger_m,
                     "escape_reverse_clear_m": escape_reverse_clear_m,

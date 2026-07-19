@@ -138,6 +138,19 @@ RISK_MAP_WRITE_POLICY=approach_confirmed
 
 `crack`、`corrosion`、`leakage` 先作为候选记录，RRT 不被打断；车辆自然靠近后再做近距离确认。`blockage` 可触发事件驱动靠近，并预留机械臂处置语义。风险事件现在会尝试通过 TF 写入 `map_point_xy_m`；如果只有 `odom_point_xy_m`，可视化会标为 `odom≈` 近似候选，不再当作精确地图点。
 
+为降低完整链路的 CPU/DDS 压力，`risk-approach` 默认由 YOLO 进程通过原生 `pyrealsense2` 直接读取 D435，不再发布 15 FPS 原始图像 DDS。采集线程只覆盖保存 3 个最新 raw frameset 引用；推理线程先处理最新 RGB，只有检测命中时才对同一 frameset 执行深度对齐。需要回退旧链路时可设置 `YOLO_FRAME_SOURCE=ros`。K1 已安装同版本 ROS C++ 库时，可只编译 Python binding：
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+bash tools/build_k1_pyrealsense2_binding.sh /path/to/librealsense-2.55.1
+```
+
+正式链默认仍为 SpaceMIT EP；设置 `YOLO_PROVIDER=cpu` 时启动脚本才会改用 `yolov8n_480x640_fp32_blockage03.onnx`。RRT 现在根据 `/map` 内容版本和目标完成事件触发重算。地图不变且没有新事件时不会反复执行整图 WFD/RRT，`RRT_SUMMARY.planning_metrics` 会记录规划轮数、地图版本和跳过的重复更新。
+
+风险候选默认最多保留 64 个、TTL 60 秒，同一候选只保留最高置信度证据；USB 近距离核实后的风险进入独立 confirmed 列表。统一状态文件为 `<run>/yolo_risk/mission_state.json`，并预留 `visualization`、`arm`、`llm_report`、`voice` 四个后续接口，本轮不启动这些高层模块。
+
+风险空间化使用最近 3 秒、默认 10 Hz 的 PoseSample 缓存，按 RGB 拍摄时刻完成 `camera -> base -> odom -> map` 投影，避免使用推理结束后的当前位姿投影旧图像。单帧风险不会直接进入正式接近事件：同类别、2 秒内、地图距离不超过 0.25m 的观测进入 3 帧窗口，至少 2 次具有有效深度和拍摄时刻位姿才升级为 `spatially confirmed`。融合权重为 `confidence * depth_quality * pose_quality`；近距离 USB 核验前，机械臂状态固定为 `blocked_until_close_verify`。
+
 新增自适应可视化工具：
 
 ```bash
@@ -150,6 +163,12 @@ python3 tools/visualize_k1_map_rrt_risk_overlay.py \
 ```
 
 该工具会根据 SLAM 地图墙线自动估计主方向，把地图旋成横平竖直，并叠加 RRT goal、YOLO 风险候选和 approach 记录。2026-07-19 一轮数据中，YOLO 记录 26 个风险候选，过滤 `confidence >= 0.50` 后剩 7 个高置信候选；该轮旧日志尚无 `map_point_xy_m`，因此这些点只能作为 `odom≈` 诊断点。
+
+### 2026-07-20 实车完整链验证
+
+最新一轮在约 `2m x 2m` 场地中真实运行 `SLAM + Nav2 + RRT + SpaceMIT EP YOLO + blockage approach + USB close confirm`。180 秒资源窗口内系统 CPU 均值为 `78.68%`，已跟踪进程合计约 `527.31%`，可用内存约 `14.34GiB`；主 YOLO 保持 SpaceMIT EP、1 秒一帧。完整运行累计 27 个 RRT goal、6 个 D435 风险事件，并完成一次 `blockage=0.8061` 的 USB 近距离确认和 RRT 恢复。
+
+地图、RRT/风险叠图、USB 核验图、结构化点位和完整资源统计见 [`docs/results/real_k1_full_chain_20260720`](docs/results/real_k1_full_chain_20260720/README.md)。当前仍保留两个待修问题：同一 blockage 的空间候选与 USB confirmed 记录需要跨阶段去重；RRT/Nav2 仍存在较多 `progress_timeout` 和角向 physical-stuck。
 
 当前隧道 / 窄通道问题主要来自规则层保守叠加：RRT 目标 clearance、Nav2 footprint/inflation 和 safety guard 的 corridor stuck/spin escape 同时限制了进入窄通道的意愿。下一步建议加入明确的 `corridor_mode`：左右近但前方仍有连续空间时，低速居中前进；只有前方稳定堵住且 odom 无进展时，才触发 180 度掉头。
 

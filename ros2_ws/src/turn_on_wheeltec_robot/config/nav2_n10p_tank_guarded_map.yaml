@@ -101,7 +101,7 @@ controller_server:
       sim_time: 1.0
       linear_granularity: 0.05
       angular_granularity: 0.05
-      transform_tolerance: 0.2
+      transform_tolerance: 0.5
       xy_goal_tolerance: 0.12
       trans_stopped_velocity: 0.06
       short_circuit_trajectory_evaluation: true
@@ -135,6 +135,7 @@ local_costmap:
       publish_frequency: 4.0
       global_frame: odom
       robot_base_frame: base_footprint
+      transform_tolerance: 0.5
       rolling_window: true
       width: 3
       height: 3
@@ -151,9 +152,9 @@ local_costmap:
           marking: true
           clearing: true
           obstacle_min_range: 0.05
-          obstacle_max_range: 2.5
+          obstacle_max_range: 1.5
           raytrace_min_range: 0.05
-          raytrace_max_range: 3.0
+          raytrace_max_range: 2.0
           max_obstacle_height: 1.5
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -169,6 +170,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_footprint
+      transform_tolerance: 0.5
       resolution: 0.05
       track_unknown_space: true
       footprint: "[[0.24, 0.17], [0.24, -0.17], [-0.20, -0.17], [-0.20, 0.17]]"

@@ -1,0 +1,309 @@
+{
+  "schema_version": "k1_full_chain_resource_measurement_v1",
+  "started_at": "2026-07-19T17:16:47.352+00:00",
+  "finished_at": "2026-07-19T17:19:45.371+00:00",
+  "sample_count": 90,
+  "interval_s": 2.0,
+  "groups": {
+    "base": {
+      "cpu_percent": {
+        "mean": 31.389,
+        "p50": 31.493,
+        "p95": 32.998,
+        "max": 35.497
+      },
+      "rss_mib": {
+        "mean": 62.852,
+        "p50": 62.852,
+        "p95": 62.852,
+        "max": 62.852
+      },
+      "commands": [
+        "python3 /home/soc/edge-ai-robot-k1/ros2_ws/install/turn_on_wheeltec_robot/lib/turn_on_wheeltec_robot/wheeltec_tank_base_safe.py --ros-args -r __node:=wheeltec_tank_base --params-file /tmp/launch_params_dos_w6yr"
+      ]
+    },
+    "guard": {
+      "cpu_percent": {
+        "mean": 44.206,
+        "p50": 44.496,
+        "p95": 47.496,
+        "max": 52.994
+      },
+      "rss_mib": {
+        "mean": 61.586,
+        "p50": 61.586,
+        "p95": 61.586,
+        "max": 61.586
+      },
+      "commands": [
+        "/usr/bin/python3 /home/soc/edge-ai-robot-k1/ros2_ws/install/k1_sensor_event_adapter/lib/k1_sensor_event_adapter/scan_safety_guard_node --ros-args -r __node:=scan_safety_guard_node --params-file /tmp/launch_params_tf6st2el"
+      ]
+    },
+    "lidar": {
+      "cpu_percent": {
+        "mean": 8.428,
+        "p50": 8.487,
+        "p95": 8.999,
+        "max": 16.999
+      },
+      "rss_mib": {
+        "mean": 27.75,
+        "p50": 27.75,
+        "p95": 27.75,
+        "max": 27.75
+      },
+      "commands": [
+        "/home/soc/lslidar_ws/install/lslidar_driver/lib/lslidar_driver/lslidar_driver_node --ros-args -r __node:=lslidar_driver_node -r __ns:=/x10 --params-file /home/soc/lslidar_ws/install/lslidar_driver/share/lslidar_driver/config/lslidar_n10p_uart.yaml"
+      ]
+    },
+    "nav2_behavior": {
+      "cpu_percent": {
+        "mean": 24.917,
+        "p50": 24.975,
+        "p95": 26.497,
+        "max": 31.498
+      },
+      "rss_mib": {
+        "mean": 34.625,
+        "p50": 34.625,
+        "p95": 34.625,
+        "max": 34.625
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_behaviors/behavior_server --ros-args -r __node:=behavior_server --params-file /tmp/launch_params_jnmbfmpg -r /tf:=tf -r /tf_static:=tf_static -r cmd_vel:=/cmd_vel_raw"
+      ]
+    },
+    "nav2_bt": {
+      "cpu_percent": {
+        "mean": 32.978,
+        "p50": 33.495,
+        "p95": 35.497,
+        "max": 42.497
+      },
+      "rss_mib": {
+        "mean": 46.244,
+        "p50": 46.25,
+        "p95": 46.25,
+        "max": 46.25
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_bt_navigator/bt_navigator --ros-args -r __node:=bt_navigator --params-file /tmp/launch_params_jnmbfmpg -r /tf:=tf -r /tf_static:=tf_static"
+      ]
+    },
+    "nav2_controller": {
+      "cpu_percent": {
+        "mean": 46.227,
+        "p50": 47.497,
+        "p95": 62.377,
+        "max": 70.992
+      },
+      "rss_mib": {
+        "mean": 40.725,
+        "p50": 40.75,
+        "p95": 40.75,
+        "max": 40.75
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_controller/controller_server --ros-args --params-file /tmp/launch_params_jnmbfmpg -r /tf:=tf -r /tf_static:=tf_static -r cmd_vel:=cmd_vel_nav"
+      ]
+    },
+    "nav2_lifecycle": {
+      "cpu_percent": {
+        "mean": 40.045,
+        "p50": 39.996,
+        "p95": 42.497,
+        "max": 45.995
+      },
+      "rss_mib": {
+        "mean": 28.375,
+        "p50": 28.375,
+        "p95": 28.375,
+        "max": 28.375
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_lifecycle_manager/lifecycle_manager --ros-args -r __node:=lifecycle_manager_navigation --params-file /tmp/launch_params_ycsa85m5 --params-file /tmp/launch_params_p4w_nme6 --params-file /tmp/launch_params_4yu6vkmf --params-file /tmp/launch_params_2ntmoqbq"
+      ]
+    },
+    "nav2_planner": {
+      "cpu_percent": {
+        "mean": 24.167,
+        "p50": 23.998,
+        "p95": 24.998,
+        "max": 36.997
+      },
+      "rss_mib": {
+        "mean": 36.879,
+        "p50": 36.875,
+        "p95": 37.0,
+        "max": 37.0
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_planner/planner_server --ros-args -r __node:=planner_server --params-file /tmp/launch_params_jnmbfmpg -r /tf:=tf -r /tf_static:=tf_static"
+      ]
+    },
+    "nav2_smoother": {
+      "cpu_percent": {
+        "mean": 20.106,
+        "p50": 19.998,
+        "p95": 21.498,
+        "max": 26.498
+      },
+      "rss_mib": {
+        "mean": 31.609,
+        "p50": 31.609,
+        "p95": 31.609,
+        "max": 31.609
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_smoother/smoother_server --ros-args -r __node:=smoother_server --params-file /tmp/launch_params_jnmbfmpg -r /tf:=tf -r /tf_static:=tf_static"
+      ]
+    },
+    "nav2_velocity_smoother": {
+      "cpu_percent": {
+        "mean": 17.445,
+        "p50": 17.499,
+        "p95": 18.985,
+        "max": 23.498
+      },
+      "rss_mib": {
+        "mean": 26.375,
+        "p50": 26.375,
+        "p95": 26.375,
+        "max": 26.375
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_velocity_smoother/velocity_smoother --ros-args -r __node:=velocity_smoother --params-file /tmp/launch_params_jnmbfmpg -r /tf:=tf -r /tf_static:=tf_static -r cmd_vel:=cmd_vel_nav -r cmd_vel_smoothed:=/cmd_vel_raw"
+      ]
+    },
+    "nav2_waypoint": {
+      "cpu_percent": {
+        "mean": 16.311,
+        "p50": 15.999,
+        "p95": 17.499,
+        "max": 21.998
+      },
+      "rss_mib": {
+        "mean": 27.492,
+        "p50": 27.492,
+        "p95": 27.492,
+        "max": 27.492
+      },
+      "commands": [
+        "/opt/ros/humble/lib/nav2_waypoint_follower/waypoint_follower --ros-args -r __node:=waypoint_follower --params-file /tmp/launch_params_jnmbfmpg -r /tf:=tf -r /tf_static:=tf_static"
+      ]
+    },
+    "risk_approach": {
+      "cpu_percent": {
+        "mean": 20.341,
+        "p50": 24.497,
+        "p95": 26.498,
+        "max": 30.998
+      },
+      "rss_mib": {
+        "mean": 64.622,
+        "p50": 64.59,
+        "p95": 64.715,
+        "max": 64.715
+      },
+      "commands": [
+        "python3 tools/run_real_k1_risk_approach_from_event.py --event-topic /prelim_demo/risk_event --status-topic /risk/approach_status --odom-topic /odom --goal-frame odom --stand-off-m 0.40 --final-stand-off-m 0.20 --final-creep-cmd-topic /cmd_vel_raw --final-creep-linear-x 0.04 --final-creep-max-s 5.0 --already-near-margin-m 0.03 --passive-close-confirm-distance-m 0.40 --min-confidence 0.20 --confirm-map-confidence 0.60 --max-events 1000000 --nav2-wait-s 2.0 --interrupt-rrt-on-event --resume-rrt-after-event --arm-simulation-mode semantic_only --arm-simulation-s 1.0 --resume-rrt-runtime-s 86400 --resume-rrt-max-goals 1000000 --resume-rrt-min-goal-clearance-m 0.24 --resume-rrt-map-edge-margin-m 0.10 --resume-rrt-min-goal-distance-m 0.30 --resume-rrt-free-roam-min-distance-m 0.15 --resume-rrt-start-free-search-m 0.45 --resume-rrt-replan-sleep-s 2.5 --close-confirm-usb-device /dev/video26 --close-confirm-width 640 --close-confirm-height 480 --close-confirm-warmup-frames 3 --close-confirm-capture-timeout-s 20 --close-confirm-infer-timeout-s 45 --close-confirm-conf 0.15 --close-confirm-model models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx --close-confirm-providers SpaceMITExecutionProvider,CPUExecutionProvider --output-dir /home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/risk_approach"
+      ]
+    },
+    "rrt": {
+      "cpu_percent": {
+        "mean": 68.032,
+        "p50": 68.495,
+        "p95": 76.494,
+        "max": 101.993
+      },
+      "rss_mib": {
+        "mean": 67.285,
+        "p50": 68.188,
+        "p95": 68.188,
+        "max": 74.469
+      },
+      "commands": [
+        "python3 tools/sim_rrt_frontier_explorer.py --map-topic /map --goal-topic /rrt_preview_goal_pose --stop-on-risk-topic  --map-frame map --base-frame base_footprint --runtime-s 86400 --max-goals 1000000 --sample-radius-m 0.50 --adaptive-sample-radius --adaptive-tight-sample-radius-m 0.50 --adaptive-wide-sample-radius-m 0.50 --adaptive-wide-clearance-m 0.15 --min-goal-distance-m 0.3 --inflation-m 0.12 --frontier-standoff-m 0.10 --frontier-backoffs-m 0.10,0.18,0.25,0.35 --goal-clearance-check-m 0.45 --min-goal-clearance-m 0.24 --goal-separation-m 0.12 --recent-goal-memory 8 --recent-goal-cooldown-s 30 --rejected-goal-memory 60 --rejected-goal-cooldown-s 30 --rejected-goal-separation-m 0.25 --free-roam-when-no-frontier --free-roam-min-distance-m 0.15 --map-edge-margin-m 0.1 --frontier-mode hybrid --wfd-max-cells 12000 --min-frontier-cluster-cells 2 --frontier-cluster-candidate-limit 8 --frontier-distance-weight 1.0 --frontier-size-weight 0.05 --frontier-unknown-weight 0.0 --frontier-unknown-gain-radius-m 0.35 --free-roam-unknown-weight 0.0 --free-roam-distance-weight 0.20 --free-roam-unknown-gain-radius-m 0.40 --goal-result-timeout-s 45 --goal-send-timeout-s 8 --goal-progress-timeout-s 30 --goal-progress-grace-s 5 --goal-progress-epsilon-m 0.03 --physical-stuck-cmd-angular-radps 0.20 --physical-stuck-odom-angular-radps 0.05 --failure-backoff-after 8 --failure-backoff-s 5 --replan-sleep-s 2.5 --no-frontier-retry-s 10 --start-free-search-m 0.45 --send-nav2-action --report /home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/rrt_frontier_nav2_2m_unlimited_report.json",
+        "python3 tools/sim_rrt_frontier_explorer.py --map-topic /map --goal-topic /rrt_preview_goal_pose --stop-on-risk-topic  --map-frame map --base-frame base_footprint --runtime-s 86400 --max-goals 1000000 --sample-radius-m 0.50 --adaptive-sample-radius --adaptive-tight-sample-radius-m 0.50 --adaptive-wide-sample-radius-m 0.50 --adaptive-wide-clearance-m 0.15 --min-goal-distance-m 0.30 --inflation-m 0.12 --frontier-standoff-m 0.10 --frontier-backoffs-m 0.10,0.18,0.25,0.35 --goal-clearance-check-m 0.45 --min-goal-clearance-m 0.24 --goal-separation-m 0.12 --recent-goal-memory 8 --recent-goal-cooldown-s 30 --rejected-goal-memory 60 --rejected-goal-cooldown-s 30 --rejected-goal-separation-m 0.25 --free-roam-when-no-frontier --free-roam-min-distance-m 0.15 --map-edge-margin-m 0.10 --frontier-mode hybrid --wfd-max-cells 12000 --min-frontier-cluster-cells 2 --frontier-cluster-candidate-limit 8 --frontier-distance-weight 1.0 --frontier-size-weight 0.05 --frontier-unknown-weight 0.0 --frontier-unknown-gain-radius-m 0.35 --free-roam-unknown-weight 0.0 --free-roam-distance-weight 0.20 --free-roam-unknown-gain-radius-m 0.40 --goal-result-timeout-s 45 --goal-send-timeout-s 8 --goal-progress-timeout-s 30 --goal-progress-grace-s 5 --goal-progress-epsilon-m 0.03 --physical-stuck-cmd-angular-radps 0.20 --physical-stuck-odom-angular-radps 0.05 --failure-backoff-after 8 --failure-backoff-s 5 --replan-sleep-s 2.5 --no-frontier-retry-s 10 --start-free-search-m 0.45 --send-nav2-action --report /home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/rrt_frontier_nav2_2m_unlimited_report.json"
+      ]
+    },
+    "slam": {
+      "cpu_percent": {
+        "mean": 11.705,
+        "p50": 8.499,
+        "p95": 46.495,
+        "max": 71.991
+      },
+      "rss_mib": {
+        "mean": 47.897,
+        "p50": 47.766,
+        "p95": 48.516,
+        "max": 48.516
+      },
+      "commands": [
+        "/opt/ros/humble/lib/slam_toolbox/async_slam_toolbox_node --ros-args -r __node:=slam_toolbox --params-file /home/soc/edge-ai-robot-k1/ros2_ws/install/turn_on_wheeltec_robot/share/turn_on_wheeltec_robot/config/slam_toolbox_n10p_tank.yaml"
+      ]
+    },
+    "yolo": {
+      "cpu_percent": {
+        "mean": 135.374,
+        "p50": 134.991,
+        "p95": 146.482,
+        "max": 155.484
+      },
+      "rss_mib": {
+        "mean": 255.56,
+        "p50": 256.07,
+        "p95": 259.602,
+        "max": 259.613
+      },
+      "commands": [
+        "python3 tools/run_prelim_remote_mapping_yolo_arm_demo.py --provider spacemit --frame-source realsense --realsense-width 640 --realsense-height 480 --realsense-fps 15 --realsense-frame-slots 3 --model models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx --imgsz 640 --conf 0.15 --iou 0.45 --max-det 10 --inference-period-s 1.0 --passive-close-confirm-distance-m 0.40 --opencv-num-threads 1 --ort-intra-op-threads 1 --ort-inter-op-threads 1 --min-depth-m 0.20 --max-depth-m 1.20 --map-frame map --odom-frame odom --tf-lookup-timeout-s 0.05 --pose-cache-duration-s 3.0 --pose-sample-hz 10.0 --pose-max-age-s 0.20 --event-topic /perception/mock_event --demo-event-topic /prelim_demo/risk_event --alarm-topic /perception/risk_alarm --auto-risk-gates crack:0.60:0.20:1.20,corrosion:0.60:0.20:1.20,leakage:0.60:0.20:1.20,blockage:0.60:0.20:1.20 --approach-risk-gates crack:0.15:0.20:1.20,corrosion:0.15:0.20:1.20,leakage:0.15:0.20:1.20,blockage:0.15:0.20:1.20 --dedup-map-grid-m 0.20 --max-risk-candidates 64 --risk-candidate-ttl-s 60 --risk-index-flush-period-s 5 --risk-fusion-distance-m 0.25 --risk-fusion-time-s 2.0 --risk-fusion-required 2 --risk-fusion-window 3 --arm-response-mode disabled --map-write-policy approach_confirmed --no-visuals --output-dir /home/soc/edge-ai-robot-k1/outputs/real_k1_full_chain_initial_20260720_011411/yolo_risk"
+      ]
+    }
+  },
+  "system": {
+    "cpu_pressure_full_avg10": {
+      "mean": 0.0,
+      "p50": 0.0,
+      "p95": 0.0,
+      "max": 0.0
+    },
+    "cpu_pressure_some_avg10": {
+      "mean": 33.809,
+      "p50": 34.24,
+      "p95": 37.41,
+      "max": 38.32
+    },
+    "load1": {
+      "mean": 12.542,
+      "p50": 12.77,
+      "p95": 13.57,
+      "max": 13.96
+    },
+    "load5": {
+      "mean": 8.012,
+      "p50": 8.25,
+      "p95": 9.16,
+      "max": 9.18
+    },
+    "mem_available_mib": {
+      "mean": 14684.647,
+      "p50": 14682.598,
+      "p95": 14715.621,
+      "max": 14723.637
+    },
+    "system_cpu_percent": {
+      "mean": 78.683,
+      "p50": 78.075,
+      "p95": 87.037,
+      "max": 88.868
+    },
+    "tracked_cpu_percent": {
+      "mean": 527.307,
+      "p50": 544.446,
+      "p95": 591.424,
+      "max": 637.954
+    }
+  }
+}

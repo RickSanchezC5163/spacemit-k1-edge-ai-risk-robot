@@ -9,6 +9,7 @@ from geometry_msgs.msg import Twist
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
@@ -19,15 +20,16 @@ class ScanSafetyGuardNode(Node):
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("input_cmd_topic", "/input_cmd_vel")
         self.declare_parameter("output_cmd_topic", "/cmd_vel")
+        self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("status_topic", "/safety/front_obstacle")
         self.declare_parameter("event_topic", "/perception/mock_event")
         self.declare_parameter("stop_request_topic", "/chassis/stop_request")
         self.declare_parameter("front_sector_deg", 35.0)
         self.declare_parameter("front_collision_corridor_half_width_m", 0.26)
-        self.declare_parameter("front_collision_min_x_m", 0.02)
+        self.declare_parameter("front_collision_min_x_m", 0.12)
         self.declare_parameter("micro_adjust_sector_deg", 45.0)
-        self.declare_parameter("micro_adjust_trigger_m", 0.22)
-        self.declare_parameter("micro_adjust_clear_m", 0.30)
+        self.declare_parameter("micro_adjust_trigger_m", 0.28)
+        self.declare_parameter("micro_adjust_clear_m", 0.34)
         self.declare_parameter("micro_adjust_min_valid_range_m", 0.01)
         self.declare_parameter("micro_adjust_angular_z", 0.22)
         self.declare_parameter("micro_adjust_direction_deadband_m", 0.03)
@@ -52,10 +54,35 @@ class ScanSafetyGuardNode(Node):
         self.declare_parameter("corridor_stuck_spin_front_sector_deg", 20.0)
         self.declare_parameter("corridor_stuck_spin_require_sides", True)
         self.declare_parameter("corridor_stuck_spin_side_blocked_m", 0.32)
+        self.declare_parameter("enable_corridor_trial", True)
+        self.declare_parameter("corridor_trial_center_half_width_m", 0.10)
+        self.declare_parameter("corridor_trial_enter_front_p10_m", 0.40)
+        self.declare_parameter("corridor_trial_keep_front_p10_m", 0.34)
+        self.declare_parameter("corridor_trial_side_near_m", 0.40)
+        self.declare_parameter("corridor_trial_enter_stable_s", 0.50)
+        self.declare_parameter("corridor_trial_exit_stable_s", 0.80)
+        self.declare_parameter("corridor_trial_forward_intent_mps", 0.04)
+        self.declare_parameter("corridor_trial_max_linear_mps", 0.24)
+        self.declare_parameter("corridor_trial_max_angular_radps", 0.16)
+        self.declare_parameter("corridor_trial_wall_turn_limit_radps", 0.06)
+        self.declare_parameter("corridor_trial_progress_window_s", 2.50)
+        self.declare_parameter("corridor_trial_min_forward_progress_m", 0.04)
+        self.declare_parameter("corridor_trial_blocked_front_p10_m", 0.30)
+        self.declare_parameter("corridor_trial_blocked_stable_s", 0.80)
+        self.declare_parameter("corridor_trial_stop_s", 0.40)
+        self.declare_parameter("corridor_trial_rear_clear_m", 0.18)
+        self.declare_parameter("corridor_trial_max_recoveries", 2)
+        self.declare_parameter("corridor_trial_odom_timeout_s", 0.60)
+        self.declare_parameter("enable_corridor_deadend_turn", True)
+        self.declare_parameter("corridor_deadend_side_clear_m", 0.45)
+        self.declare_parameter("corridor_deadend_side_turn_degrees", 35.0)
+        self.declare_parameter("corridor_deadend_side_turn_angular_z", 0.25)
+        self.declare_parameter("corridor_deadend_turnaround_degrees", 180.0)
+        self.declare_parameter("corridor_deadend_turnaround_angular_z", 0.35)
         self.declare_parameter("enable_escape_reverse", True)
         self.declare_parameter("escape_reverse_trigger_m", 0.16)
         self.declare_parameter("escape_reverse_clear_m", 0.24)
-        self.declare_parameter("escape_reverse_linear_x", -0.08)
+        self.declare_parameter("escape_reverse_linear_x", -0.14)
         self.declare_parameter("escape_reverse_angular_z", 0.20)
         self.declare_parameter("escape_reverse_max_s", 0.80)
         self.declare_parameter("escape_reverse_cooldown_s", 0.40)
@@ -65,7 +92,7 @@ class ScanSafetyGuardNode(Node):
         self.declare_parameter("emergency_stop_m", 0.45)
         self.declare_parameter("soft_max_linear", 0.30)
         self.declare_parameter("clear_max_linear", 0.30)
-        self.declare_parameter("min_effective_forward", 0.28)
+        self.declare_parameter("min_effective_forward", 0.12)
         self.declare_parameter("approach_stop_m", 1.60)
         self.declare_parameter("approach_rate_stop_mps", 0.35)
         self.declare_parameter("ttc_stop_s", 1.20)
@@ -84,6 +111,7 @@ class ScanSafetyGuardNode(Node):
         self.scan_topic = str(self.get_parameter("scan_topic").value)
         self.input_cmd_topic = str(self.get_parameter("input_cmd_topic").value)
         self.output_cmd_topic = str(self.get_parameter("output_cmd_topic").value)
+        self.odom_topic = str(self.get_parameter("odom_topic").value)
         self.status_topic = str(self.get_parameter("status_topic").value)
         self.event_topic = str(self.get_parameter("event_topic").value)
         self.stop_request_topic = str(self.get_parameter("stop_request_topic").value)
@@ -161,6 +189,79 @@ class ScanSafetyGuardNode(Node):
         self.corridor_stuck_spin_side_blocked_m = float(
             self.get_parameter("corridor_stuck_spin_side_blocked_m").value
         )
+        self.enable_corridor_trial = self._param_bool(
+            self.get_parameter("enable_corridor_trial").value
+        )
+        self.corridor_trial_center_half_width_m = float(
+            self.get_parameter("corridor_trial_center_half_width_m").value
+        )
+        self.corridor_trial_enter_front_p10_m = float(
+            self.get_parameter("corridor_trial_enter_front_p10_m").value
+        )
+        self.corridor_trial_keep_front_p10_m = float(
+            self.get_parameter("corridor_trial_keep_front_p10_m").value
+        )
+        self.corridor_trial_side_near_m = float(
+            self.get_parameter("corridor_trial_side_near_m").value
+        )
+        self.corridor_trial_enter_stable_s = float(
+            self.get_parameter("corridor_trial_enter_stable_s").value
+        )
+        self.corridor_trial_exit_stable_s = float(
+            self.get_parameter("corridor_trial_exit_stable_s").value
+        )
+        self.corridor_trial_forward_intent_mps = float(
+            self.get_parameter("corridor_trial_forward_intent_mps").value
+        )
+        self.corridor_trial_max_linear_mps = float(
+            self.get_parameter("corridor_trial_max_linear_mps").value
+        )
+        self.corridor_trial_max_angular_radps = float(
+            self.get_parameter("corridor_trial_max_angular_radps").value
+        )
+        self.corridor_trial_wall_turn_limit_radps = float(
+            self.get_parameter("corridor_trial_wall_turn_limit_radps").value
+        )
+        self.corridor_trial_progress_window_s = float(
+            self.get_parameter("corridor_trial_progress_window_s").value
+        )
+        self.corridor_trial_min_forward_progress_m = float(
+            self.get_parameter("corridor_trial_min_forward_progress_m").value
+        )
+        self.corridor_trial_blocked_front_p10_m = float(
+            self.get_parameter("corridor_trial_blocked_front_p10_m").value
+        )
+        self.corridor_trial_blocked_stable_s = float(
+            self.get_parameter("corridor_trial_blocked_stable_s").value
+        )
+        self.corridor_trial_stop_s = float(self.get_parameter("corridor_trial_stop_s").value)
+        self.corridor_trial_rear_clear_m = float(
+            self.get_parameter("corridor_trial_rear_clear_m").value
+        )
+        self.corridor_trial_max_recoveries = int(
+            self.get_parameter("corridor_trial_max_recoveries").value
+        )
+        self.corridor_trial_odom_timeout_s = float(
+            self.get_parameter("corridor_trial_odom_timeout_s").value
+        )
+        self.enable_corridor_deadend_turn = self._param_bool(
+            self.get_parameter("enable_corridor_deadend_turn").value
+        )
+        self.corridor_deadend_side_clear_m = float(
+            self.get_parameter("corridor_deadend_side_clear_m").value
+        )
+        self.corridor_deadend_side_turn_degrees = float(
+            self.get_parameter("corridor_deadend_side_turn_degrees").value
+        )
+        self.corridor_deadend_side_turn_angular_z = float(
+            self.get_parameter("corridor_deadend_side_turn_angular_z").value
+        )
+        self.corridor_deadend_turnaround_degrees = float(
+            self.get_parameter("corridor_deadend_turnaround_degrees").value
+        )
+        self.corridor_deadend_turnaround_angular_z = float(
+            self.get_parameter("corridor_deadend_turnaround_angular_z").value
+        )
         self.enable_escape_reverse = self._param_bool(
             self.get_parameter("enable_escape_reverse").value
         )
@@ -204,6 +305,7 @@ class ScanSafetyGuardNode(Node):
         self.stop_request_pub = self.create_publisher(String, self.stop_request_topic, 10)
         self.create_subscription(LaserScan, self.scan_topic, self._scan_cb, 10)
         self.create_subscription(Twist, self.input_cmd_topic, self._cmd_cb, 10)
+        self.create_subscription(Odometry, self.odom_topic, self._odom_cb, 10)
         self.create_timer(output_period_s, self._output_tick)
 
         self.last_cmd = Twist()
@@ -215,6 +317,12 @@ class ScanSafetyGuardNode(Node):
         self.corridor_front_min = None
         self.corridor_front_p10 = None
         self.corridor_front_valid_count = 0
+        self.corridor_trial_front_min = None
+        self.corridor_trial_front_p10 = None
+        self.corridor_trial_front_valid_count = 0
+        self.rear_corridor_min = None
+        self.rear_corridor_p10 = None
+        self.rear_corridor_valid_count = 0
         self.deadend_front_min = None
         self.deadend_front_p10 = None
         self.deadend_front_valid_count = 0
@@ -232,6 +340,19 @@ class ScanSafetyGuardNode(Node):
         self.micro_adjust_turn_change_count = 0
         self.micro_adjust_stuck_since = 0.0
         self.corridor_stuck_since = 0.0
+        self.corridor_trial_candidate_since = 0.0
+        self.corridor_trial_exit_since = 0.0
+        self.corridor_trial_blocked_since = 0.0
+        self.corridor_trial_enter_time = 0.0
+        self.corridor_trial_stuck_until = 0.0
+        self.corridor_trial_recoveries = 0
+        self.corridor_deadend_side_turn_until = 0.0
+        self.corridor_deadend_side_turn_sign = 1.0
+        self.corridor_deadend_side_turn_tried = set()
+        self.corridor_deadend_turnaround_until = 0.0
+        self.corridor_deadend_turnaround_sign = 1.0
+        self.odom_history = []
+        self.last_odom_time = 0.0
         self.spin_escape_until = 0.0
         self.spin_escape_cooldown_until = 0.0
         self.spin_escape_turn_sign = 1.0
@@ -330,6 +451,56 @@ class ScanSafetyGuardNode(Node):
                     self.corridor_stuck_spin_require_sides = self._param_bool(value)
                 elif name == "corridor_stuck_spin_side_blocked_m":
                     self.corridor_stuck_spin_side_blocked_m = float(value)
+                elif name == "enable_corridor_trial":
+                    self.enable_corridor_trial = self._param_bool(value)
+                elif name == "corridor_trial_center_half_width_m":
+                    self.corridor_trial_center_half_width_m = float(value)
+                elif name == "corridor_trial_enter_front_p10_m":
+                    self.corridor_trial_enter_front_p10_m = float(value)
+                elif name == "corridor_trial_keep_front_p10_m":
+                    self.corridor_trial_keep_front_p10_m = float(value)
+                elif name == "corridor_trial_side_near_m":
+                    self.corridor_trial_side_near_m = float(value)
+                elif name == "corridor_trial_enter_stable_s":
+                    self.corridor_trial_enter_stable_s = float(value)
+                elif name == "corridor_trial_exit_stable_s":
+                    self.corridor_trial_exit_stable_s = float(value)
+                elif name == "corridor_trial_forward_intent_mps":
+                    self.corridor_trial_forward_intent_mps = float(value)
+                elif name == "corridor_trial_max_linear_mps":
+                    self.corridor_trial_max_linear_mps = float(value)
+                elif name == "corridor_trial_max_angular_radps":
+                    self.corridor_trial_max_angular_radps = float(value)
+                elif name == "corridor_trial_wall_turn_limit_radps":
+                    self.corridor_trial_wall_turn_limit_radps = float(value)
+                elif name == "corridor_trial_progress_window_s":
+                    self.corridor_trial_progress_window_s = float(value)
+                elif name == "corridor_trial_min_forward_progress_m":
+                    self.corridor_trial_min_forward_progress_m = float(value)
+                elif name == "corridor_trial_blocked_front_p10_m":
+                    self.corridor_trial_blocked_front_p10_m = float(value)
+                elif name == "corridor_trial_blocked_stable_s":
+                    self.corridor_trial_blocked_stable_s = float(value)
+                elif name == "corridor_trial_stop_s":
+                    self.corridor_trial_stop_s = float(value)
+                elif name == "corridor_trial_rear_clear_m":
+                    self.corridor_trial_rear_clear_m = float(value)
+                elif name == "corridor_trial_max_recoveries":
+                    self.corridor_trial_max_recoveries = int(value)
+                elif name == "corridor_trial_odom_timeout_s":
+                    self.corridor_trial_odom_timeout_s = float(value)
+                elif name == "enable_corridor_deadend_turn":
+                    self.enable_corridor_deadend_turn = self._param_bool(value)
+                elif name == "corridor_deadend_side_clear_m":
+                    self.corridor_deadend_side_clear_m = float(value)
+                elif name == "corridor_deadend_side_turn_degrees":
+                    self.corridor_deadend_side_turn_degrees = float(value)
+                elif name == "corridor_deadend_side_turn_angular_z":
+                    self.corridor_deadend_side_turn_angular_z = float(value)
+                elif name == "corridor_deadend_turnaround_degrees":
+                    self.corridor_deadend_turnaround_degrees = float(value)
+                elif name == "corridor_deadend_turnaround_angular_z":
+                    self.corridor_deadend_turnaround_angular_z = float(value)
                 elif name == "enable_escape_reverse":
                     self.enable_escape_reverse = self._param_bool(value)
                 elif name == "escape_reverse_trigger_m":
@@ -376,6 +547,16 @@ class ScanSafetyGuardNode(Node):
         self.last_cmd = msg
         self.last_cmd_time = time.monotonic()
 
+    def _odom_cb(self, msg: Odometry) -> None:
+        now = time.monotonic()
+        pose = msg.pose.pose
+        yaw = self._yaw_from_quat(pose.orientation)
+        self.odom_history.append((now, float(pose.position.x), float(pose.position.y), yaw))
+        keep_after = now - max(5.0, self.corridor_trial_progress_window_s + 1.0)
+        while self.odom_history and self.odom_history[0][0] < keep_after:
+            self.odom_history.pop(0)
+        self.last_odom_time = now
+
     def _scan_cb(self, scan: LaserScan) -> None:
         try:
             now = time.monotonic()
@@ -386,6 +567,12 @@ class ScanSafetyGuardNode(Node):
             self.corridor_front_min = stats["corridor_front_min"]
             self.corridor_front_p10 = stats["corridor_front_p10"]
             self.corridor_front_valid_count = stats["corridor_valid_count"]
+            self.corridor_trial_front_min = stats["corridor_trial_front_min"]
+            self.corridor_trial_front_p10 = stats["corridor_trial_front_p10"]
+            self.corridor_trial_front_valid_count = stats["corridor_trial_valid_count"]
+            self.rear_corridor_min = stats["rear_corridor_min"]
+            self.rear_corridor_p10 = stats["rear_corridor_p10"]
+            self.rear_corridor_valid_count = stats["rear_corridor_valid_count"]
             self.deadend_front_min = stats["deadend_front_min"]
             self.deadend_front_p10 = stats["deadend_front_p10"]
             self.deadend_front_valid_count = stats["deadend_front_valid_count"]
@@ -436,6 +623,15 @@ class ScanSafetyGuardNode(Node):
                 return Twist(), "hard_stop_stop_request"
             return Twist(), "hard_stop_latched_zero"
 
+        if self.state == "corridor_stuck":
+            return Twist(), "corridor_stuck_zero"
+
+        if self.state == "corridor_side_turn":
+            return self._corridor_side_turn_cmd(), "corridor_side_turn"
+
+        if self.state == "corridor_turnaround":
+            return self._corridor_turnaround_cmd(), "corridor_turnaround"
+
         if self.state == "escape_reverse":
             action = "escape_reverse" if motion_requested else "escape_reverse_autonomous"
             return self._escape_reverse_cmd(source), action
@@ -447,6 +643,9 @@ class ScanSafetyGuardNode(Node):
         if self.state == "micro_adjust":
             action = "micro_adjust_rotate" if motion_requested else "micro_adjust_autonomous_rotate"
             return self._micro_adjust_cmd(result, record_turn_change=motion_requested), action
+
+        if self.state == "corridor_trial":
+            return self._corridor_trial_cmd(result), "corridor_trial_limit"
 
         if result.linear.x > 0.0:
             if result.linear.x < self.min_effective_forward:
@@ -479,6 +678,13 @@ class ScanSafetyGuardNode(Node):
                 None if self.corridor_front_p10 is None else round(float(self.corridor_front_p10), 3)
             ),
             "corridor_front_valid_count": int(self.corridor_front_valid_count),
+            "rear_corridor_min_m": (
+                None if self.rear_corridor_min is None else round(float(self.rear_corridor_min), 3)
+            ),
+            "rear_corridor_p10_m": (
+                None if self.rear_corridor_p10 is None else round(float(self.rear_corridor_p10), 3)
+            ),
+            "rear_corridor_valid_count": int(self.rear_corridor_valid_count),
             "deadend_front_min_m": (
                 None if self.deadend_front_min is None else round(float(self.deadend_front_min), 3)
             ),
@@ -509,12 +715,110 @@ class ScanSafetyGuardNode(Node):
             return self.clear_max_linear
         if self._hard_condition():
             return 0.0
-        if self.state in ("warning", "micro_adjust", "escape_reverse", "spin_escape"):
+        if self.state in (
+            "warning",
+            "micro_adjust",
+            "escape_reverse",
+            "spin_escape",
+            "corridor_side_turn",
+            "corridor_turnaround",
+        ):
             return self.soft_max_linear
         return self.clear_max_linear
 
     def _update_state(self, now: float) -> None:
         old_state = self.state
+        if self._hard_condition():
+            if old_state != "hard_stop":
+                self.hard_stop_stop_request_sent = False
+            self.state = "hard_stop"
+            self.hard_stop_latch_until = max(
+                self.hard_stop_latch_until, now + self.hard_stop_latch_s
+            )
+            if self.state != old_state:
+                self._log_state_transition("hard_condition")
+            return
+
+        if self.state == "corridor_stuck":
+            if now < self.corridor_trial_stuck_until:
+                self._log_state_transition("corridor_stuck_hold")
+                return
+            if self.enable_corridor_deadend_turn:
+                if self._begin_corridor_side_turn(now):
+                    self.state = "corridor_side_turn"
+                    self.hard_stop_stop_request_sent = False
+                    self._log_state_transition("corridor_deadend_side_turn")
+                    return
+                self._begin_corridor_turnaround(now)
+                self.state = "corridor_turnaround"
+                self.hard_stop_stop_request_sent = False
+                self._log_state_transition("corridor_deadend_turnaround")
+                return
+            if self._rear_corridor_clear() and self._begin_corridor_recovery(now):
+                self.state = "escape_reverse"
+                self.hard_stop_stop_request_sent = False
+                self._log_state_transition("corridor_stuck_recover")
+                return
+            self.state = "hard_stop"
+            self.hard_stop_latch_until = max(
+                self.hard_stop_latch_until, now + self.hard_stop_latch_s
+            )
+            self._publish_stop_request(now, "corridor_stuck_no_rear_clear", self.last_cmd)
+            self._log_state_transition("corridor_stuck_no_rear_clear")
+            return
+
+        if self.state == "corridor_side_turn":
+            if now < self.corridor_deadend_side_turn_until:
+                return
+            if self._corridor_front_open(self.corridor_trial_keep_front_p10_m):
+                self.state = "clear"
+                self.corridor_trial_blocked_since = 0.0
+                self._log_state_transition("corridor_side_turn_open")
+                return
+            if self._begin_corridor_side_turn(now):
+                self._log_state_transition("corridor_deadend_side_turn_next")
+                return
+            self._begin_corridor_turnaround(now)
+            self.state = "corridor_turnaround"
+            self.hard_stop_stop_request_sent = False
+            self._log_state_transition("corridor_side_turn_no_open")
+            return
+
+        if self.state == "corridor_turnaround":
+            if now < self.corridor_deadend_turnaround_until:
+                return
+            self.state = "clear"
+            self.corridor_deadend_side_turn_tried.clear()
+            self.corridor_trial_blocked_since = 0.0
+            self._log_state_transition("corridor_turnaround_done")
+            return
+
+        if self.state == "corridor_trial" and self._corridor_trial_stuck_condition(now):
+            self.state = "corridor_stuck"
+            self.corridor_trial_stuck_until = now + max(0.0, self.corridor_trial_stop_s)
+            self._publish_stop_request(now, "corridor_trial_no_progress", self.last_cmd)
+            self._log_state_transition("corridor_trial_no_progress")
+            return
+
+        if self._corridor_trial_condition(now):
+            self.state = "corridor_trial"
+            self.hard_stop_stop_request_sent = False
+            self._reset_micro_adjust_turn_changes()
+            if self.state != old_state:
+                self.corridor_trial_enter_time = now
+                self.corridor_trial_blocked_since = 0.0
+                self._log_state_transition("corridor_trial")
+            if self._corridor_trial_stuck_condition(now):
+                self.state = "corridor_stuck"
+                self.corridor_trial_stuck_until = now + max(0.0, self.corridor_trial_stop_s)
+                self._publish_stop_request(now, "corridor_trial_no_progress", self.last_cmd)
+                self._log_state_transition("corridor_trial_no_progress")
+            return
+
+        if old_state == "corridor_trial":
+            self.corridor_trial_enter_time = 0.0
+            self.corridor_trial_blocked_since = 0.0
+
         if self._spin_escape_condition(now):
             self.state = "spin_escape"
             self.hard_stop_stop_request_sent = False
@@ -550,17 +854,6 @@ class ScanSafetyGuardNode(Node):
                 self._log_state_transition("micro_adjust")
             return
 
-        if self._hard_condition():
-            if old_state != "hard_stop":
-                self.hard_stop_stop_request_sent = False
-            self.state = "hard_stop"
-            self.hard_stop_latch_until = max(
-                self.hard_stop_latch_until, now + self.hard_stop_latch_s
-            )
-            if self.state != old_state:
-                self._log_state_transition("hard_condition")
-            return
-
         if self.front_valid_count < self.min_front_valid_count or self.front_p10 is None:
             return
 
@@ -583,6 +876,8 @@ class ScanSafetyGuardNode(Node):
         if self.state == "spin_escape":
             self.state = "warning" if self.front_p10 < self.slow_clear_m else "clear"
             self._log_state_transition("scan")
+            return
+        if self.state == "corridor_stuck":
             return
         if self.front_p10 < self.slow_down_m:
             self.state = "warning"
@@ -619,6 +914,191 @@ class ScanSafetyGuardNode(Node):
         if forward_cmd_active and inside_approach_zone and self.ttc_s < self.ttc_stop_s:
             return True
         return False
+
+    def _forward_intent(self, now: float) -> bool:
+        return (
+            now - self.last_cmd_time <= self.cmd_timeout_s
+            and float(self.last_cmd.linear.x) > self.corridor_trial_forward_intent_mps
+        )
+
+    def _odom_fresh(self, now: float) -> bool:
+        return (
+            self.last_odom_time > 0.0
+            and now - self.last_odom_time <= self.corridor_trial_odom_timeout_s
+        )
+
+    def _corridor_sides_near(self) -> bool:
+        return (
+            self.micro_left_min is not None
+            and self.micro_right_min is not None
+            and self.micro_left_min <= self.corridor_trial_side_near_m
+            and self.micro_right_min <= self.corridor_trial_side_near_m
+        )
+
+    def _corridor_front_open(self, threshold: float) -> bool:
+        return (
+            self.corridor_trial_front_p10 is not None
+            and self.corridor_trial_front_valid_count >= self.min_front_valid_count
+            and self.corridor_trial_front_p10 > threshold
+        )
+
+    def _spin_escape_should_abort(self) -> bool:
+        open_values = [self.deadend_front_p10, self.front_p10, self.corridor_front_p10]
+        return any(
+            value is not None and value >= self.micro_adjust_stuck_spin_clear_m
+            for value in open_values
+        )
+
+    def _corridor_trial_condition(self, now: float) -> bool:
+        if not self.enable_corridor_trial:
+            self.corridor_trial_candidate_since = 0.0
+            self.corridor_trial_exit_since = 0.0
+            return False
+        if not self._forward_intent(now):
+            self.corridor_trial_candidate_since = 0.0
+            return False
+
+        sides_near = self._corridor_sides_near()
+        threshold = (
+            self.corridor_trial_keep_front_p10_m
+            if self.state == "corridor_trial"
+            else self.corridor_trial_enter_front_p10_m
+        )
+        front_open = self._corridor_front_open(threshold)
+        candidate = sides_near and front_open
+
+        if candidate:
+            self.corridor_trial_exit_since = 0.0
+            if self.corridor_trial_candidate_since <= 0.0:
+                self.corridor_trial_candidate_since = now
+            if self.state == "corridor_trial":
+                return True
+            return (
+                now - self.corridor_trial_candidate_since
+                >= max(0.0, self.corridor_trial_enter_stable_s)
+            )
+
+        self.corridor_trial_candidate_since = 0.0
+        if self.state != "corridor_trial":
+            return False
+        if not sides_near:
+            if self.corridor_trial_exit_since <= 0.0:
+                self.corridor_trial_exit_since = now
+                return True
+            if now - self.corridor_trial_exit_since < max(0.0, self.corridor_trial_exit_stable_s):
+                return True
+            self.corridor_trial_exit_since = 0.0
+            self.corridor_trial_recoveries = 0
+            return False
+        self.corridor_trial_exit_since = 0.0
+        return True
+
+    def _corridor_trial_stuck_condition(self, now: float) -> bool:
+        if self.state != "corridor_trial" or not self._forward_intent(now):
+            self.corridor_trial_blocked_since = 0.0
+            return False
+        if not self._odom_fresh(now):
+            self.corridor_trial_blocked_since = 0.0
+            return False
+
+        front_blocked = (
+            self.corridor_trial_front_p10 is not None
+            and self.corridor_trial_front_valid_count >= self.min_front_valid_count
+            and self.corridor_trial_front_p10 < self.corridor_trial_blocked_front_p10_m
+        )
+        if not front_blocked:
+            self.corridor_trial_blocked_since = 0.0
+            return False
+        if self.corridor_trial_blocked_since <= 0.0:
+            self.corridor_trial_blocked_since = now
+            return False
+        if now - self.corridor_trial_blocked_since < max(0.0, self.corridor_trial_blocked_stable_s):
+            return False
+
+        progress = self._forward_progress_window(now, self.corridor_trial_progress_window_s)
+        if progress is None:
+            return False
+        return progress < self.corridor_trial_min_forward_progress_m
+
+    def _forward_progress_window(self, now: float, window_s: float):
+        if len(self.odom_history) < 2:
+            return None
+        start_time = now - max(0.1, window_s)
+        start = None
+        for sample in self.odom_history:
+            if sample[0] >= start_time:
+                start = sample
+                break
+        if start is None:
+            start = self.odom_history[0]
+        end = self.odom_history[-1]
+        if end[0] - start[0] < max(0.1, window_s * 0.75):
+            return None
+        _, x0, y0, yaw0 = start
+        _, x1, y1, _ = end
+        dx = x1 - x0
+        dy = y1 - y0
+        return dx * math.cos(yaw0) + dy * math.sin(yaw0)
+
+    def _rounded_forward_progress(self, now: float):
+        progress = self._forward_progress_window(now, self.corridor_trial_progress_window_s)
+        return None if progress is None else round(float(progress), 3)
+
+    def _rear_corridor_clear(self) -> bool:
+        return (
+            self.rear_corridor_p10 is not None
+            and self.rear_corridor_valid_count >= self.min_front_valid_count
+            and self.rear_corridor_p10 >= self.corridor_trial_rear_clear_m
+        )
+
+    def _begin_corridor_recovery(self, now: float) -> bool:
+        if self.corridor_trial_recoveries >= max(0, self.corridor_trial_max_recoveries):
+            return False
+        self.corridor_trial_recoveries += 1
+        self.escape_reverse_until = now + max(0.0, self.escape_reverse_max_s)
+        self.escape_reverse_cooldown_until = (
+            self.escape_reverse_until + max(0.0, self.escape_reverse_cooldown_s)
+        )
+        self.escape_reverse_turn_sign = self._micro_adjust_turn_direction()
+        self.corridor_trial_blocked_since = 0.0
+        return True
+
+    def _begin_corridor_side_turn(self, now: float) -> bool:
+        candidates = []
+        if (
+            self.micro_left_min is not None
+            and self.micro_left_min >= self.corridor_deadend_side_clear_m
+            and "left" not in self.corridor_deadend_side_turn_tried
+        ):
+            candidates.append(("left", float(self.micro_left_min), 1.0))
+        if (
+            self.micro_right_min is not None
+            and self.micro_right_min >= self.corridor_deadend_side_clear_m
+            and "right" not in self.corridor_deadend_side_turn_tried
+        ):
+            candidates.append(("right", float(self.micro_right_min), -1.0))
+        if not candidates:
+            return False
+        side, _, sign = max(candidates, key=lambda item: item[1])
+        angular = max(abs(self.corridor_deadend_side_turn_angular_z), 1e-3)
+        degrees = max(0.0, self.corridor_deadend_side_turn_degrees)
+        if self.corridor_deadend_side_turn_tried and sign != self.corridor_deadend_side_turn_sign:
+            degrees *= 2.0
+        duration_s = math.radians(degrees) / angular
+        self.corridor_deadend_side_turn_sign = sign
+        self.corridor_deadend_side_turn_until = now + duration_s
+        self.corridor_deadend_side_turn_tried.add(side)
+        self.corridor_trial_blocked_since = 0.0
+        return True
+
+    def _begin_corridor_turnaround(self, now: float) -> None:
+        angular = max(abs(self.corridor_deadend_turnaround_angular_z), 1e-3)
+        duration_s = math.radians(max(0.0, self.corridor_deadend_turnaround_degrees)) / angular
+        left = -math.inf if self.micro_left_min is None else float(self.micro_left_min)
+        right = -math.inf if self.micro_right_min is None else float(self.micro_right_min)
+        self.corridor_deadend_turnaround_sign = 1.0 if left >= right else -1.0
+        self.corridor_deadend_turnaround_until = now + duration_s
+        self.corridor_trial_blocked_since = 0.0
 
     def _micro_adjust_condition(self) -> bool:
         if not self.enable_micro_adjust:
@@ -664,7 +1144,13 @@ class ScanSafetyGuardNode(Node):
     def _spin_escape_condition(self, now: float) -> bool:
         if not self.enable_spin_escape:
             return False
+        if self.state in ("corridor_trial", "corridor_stuck"):
+            return False
         if self.state == "spin_escape":
+            if self._spin_escape_should_abort():
+                self.spin_escape_until = 0.0
+                self.spin_escape_cooldown_until = now + max(0.0, self.spin_escape_cooldown_s)
+                return False
             return now < self.spin_escape_until
         if now < self.spin_escape_cooldown_until:
             return False
@@ -675,6 +1161,12 @@ class ScanSafetyGuardNode(Node):
 
     def _micro_adjust_stuck_spin_condition(self, now: float) -> bool:
         if not self.enable_spin_escape or not self.enable_micro_adjust_stuck_spin_escape:
+            self.micro_adjust_stuck_since = 0.0
+            return False
+        if self.state in ("corridor_trial", "corridor_stuck"):
+            self.micro_adjust_stuck_since = 0.0
+            return False
+        if self._corridor_sides_near() and self._corridor_front_open(self.corridor_trial_keep_front_p10_m):
             self.micro_adjust_stuck_since = 0.0
             return False
         if self.state == "spin_escape":
@@ -728,6 +1220,12 @@ class ScanSafetyGuardNode(Node):
 
     def _corridor_stuck_spin_condition(self, now: float) -> bool:
         if not self.enable_spin_escape or not self.enable_corridor_stuck_spin_escape:
+            self.corridor_stuck_since = 0.0
+            return False
+        if self.state in ("corridor_trial", "corridor_stuck"):
+            self.corridor_stuck_since = 0.0
+            return False
+        if self._corridor_sides_near() and self._corridor_front_open(self.corridor_trial_keep_front_p10_m):
             self.corridor_stuck_since = 0.0
             return False
         if self.state == "spin_escape":
@@ -798,6 +1296,22 @@ class ScanSafetyGuardNode(Node):
         result.angular.z = self.spin_escape_turn_sign * abs(self.spin_escape_angular_z)
         return result
 
+    def _corridor_side_turn_cmd(self) -> Twist:
+        result = Twist()
+        result.angular.z = (
+            self.corridor_deadend_side_turn_sign
+            * abs(self.corridor_deadend_side_turn_angular_z)
+        )
+        return result
+
+    def _corridor_turnaround_cmd(self) -> Twist:
+        result = Twist()
+        result.angular.z = (
+            self.corridor_deadend_turnaround_sign
+            * abs(self.corridor_deadend_turnaround_angular_z)
+        )
+        return result
+
     def _micro_adjust_cmd(self, source: Twist, record_turn_change: bool = True) -> Twist:
         turn = self._micro_adjust_turn_direction(float(source.angular.z))
         if record_turn_change:
@@ -809,6 +1323,41 @@ class ScanSafetyGuardNode(Node):
 
         result = Twist()
         result.angular.z = turn * abs(self.micro_adjust_angular_z)
+        return result
+
+    def _corridor_trial_cmd(self, source: Twist) -> Twist:
+        result = Twist()
+        linear = max(0.0, float(source.linear.x))
+        if 0.0 < linear < self.min_effective_forward:
+            linear = self.min_effective_forward
+        linear_cap = self.corridor_trial_max_linear_mps
+        if linear_cap <= 0.0:
+            linear_cap = self.clear_max_linear
+        result.linear.x = min(linear, max(0.0, linear_cap))
+        result.linear.y = 0.0
+        result.linear.z = float(source.linear.z)
+        result.angular.x = float(source.angular.x)
+        result.angular.y = float(source.angular.y)
+
+        angular = float(source.angular.z)
+        max_angular = max(0.0, self.corridor_trial_max_angular_radps)
+        if max_angular > 0.0:
+            angular = max(-max_angular, min(max_angular, angular))
+
+        wall_limit = max(0.0, self.corridor_trial_wall_turn_limit_radps)
+        left_too_close = (
+            self.micro_left_min is not None
+            and self.micro_left_min <= self.corridor_trial_side_near_m
+        )
+        right_too_close = (
+            self.micro_right_min is not None
+            and self.micro_right_min <= self.corridor_trial_side_near_m
+        )
+        if left_too_close and angular > wall_limit:
+            angular = wall_limit
+        if right_too_close and angular < -wall_limit:
+            angular = -wall_limit
+        result.angular.z = angular
         return result
 
     def _record_micro_adjust_turn(self, turn: float) -> None:
@@ -828,8 +1377,12 @@ class ScanSafetyGuardNode(Node):
         left = self.micro_left_min
         right = self.micro_right_min
         deadband = max(0.0, self.micro_adjust_direction_deadband_m)
-        left_close = left is not None and left <= self.micro_adjust_trigger_m
-        right_close = right is not None and right <= self.micro_adjust_trigger_m
+        side_bias_threshold = max(
+            self.micro_adjust_trigger_m,
+            min(self.micro_adjust_clear_m, self.micro_adjust_trigger_m + 0.10),
+        )
+        left_close = left is not None and left <= side_bias_threshold
+        right_close = right is not None and right <= side_bias_threshold
 
         turn = None
         if left_close and not right_close:
@@ -838,12 +1391,12 @@ class ScanSafetyGuardNode(Node):
             turn = 1.0
         elif left_close and right_close and abs(left - right) >= deadband:
             turn = -1.0 if left < right else 1.0
+        elif left is not None and right is not None and abs(left - right) >= deadband:
+            turn = -1.0 if left < right else 1.0
         elif now < self.micro_adjust_turn_latch_until:
             turn = self.micro_adjust_turn_sign
         elif abs(current_angular_z) > 1e-3:
             turn = 1.0 if current_angular_z > 0.0 else -1.0
-        elif left is not None and right is not None and abs(left - right) >= deadband:
-            turn = -1.0 if left < right else 1.0
         else:
             turn = self.micro_adjust_turn_sign
 
@@ -900,7 +1453,7 @@ class ScanSafetyGuardNode(Node):
         self.last_diagnostic_log_time = now
         self.get_logger().info(
             "guard_status state=%s front_min=%s front_p10=%s valid_count=%d "
-            "corridor_min=%s corridor_p10=%s corridor_count=%d "
+            "corridor_min=%s corridor_p10=%s corridor_count=%d trial_p10=%s "
             "deadend_front=%s deadend_p10=%s deadend_count=%d "
             "micro_front=%s micro_left=%s micro_right=%s "
             "approach_rate=%.3fm/s ttc=%s latch_remaining=%.3fs "
@@ -914,6 +1467,11 @@ class ScanSafetyGuardNode(Node):
                 "none" if self.corridor_front_min is None else f"{self.corridor_front_min:.3f}m",
                 "none" if self.corridor_front_p10 is None else f"{self.corridor_front_p10:.3f}m",
                 self.corridor_front_valid_count,
+                (
+                    "none"
+                    if self.corridor_trial_front_p10 is None
+                    else f"{self.corridor_trial_front_p10:.3f}m"
+                ),
                 "none" if self.deadend_front_min is None else f"{self.deadend_front_min:.3f}m",
                 "none" if self.deadend_front_p10 is None else f"{self.deadend_front_p10:.3f}m",
                 self.deadend_front_valid_count,
@@ -1015,6 +1573,47 @@ class ScanSafetyGuardNode(Node):
                 0.0 if self.corridor_stuck_since <= 0.0 else now - self.corridor_stuck_since,
                 3,
             ),
+            "enable_corridor_trial": self.enable_corridor_trial,
+            "corridor_trial_enter_front_p10_m": self.corridor_trial_enter_front_p10_m,
+            "corridor_trial_keep_front_p10_m": self.corridor_trial_keep_front_p10_m,
+            "corridor_trial_side_near_m": self.corridor_trial_side_near_m,
+            "corridor_trial_enter_stable_s": self.corridor_trial_enter_stable_s,
+            "corridor_trial_exit_stable_s": self.corridor_trial_exit_stable_s,
+            "corridor_trial_max_linear_mps": self.corridor_trial_max_linear_mps,
+            "corridor_trial_max_angular_radps": self.corridor_trial_max_angular_radps,
+            "corridor_trial_wall_turn_limit_radps": (
+                self.corridor_trial_wall_turn_limit_radps
+            ),
+            "corridor_trial_forward_progress_m": self._rounded_forward_progress(now),
+            "corridor_trial_min_forward_progress_m": (
+                self.corridor_trial_min_forward_progress_m
+            ),
+            "corridor_trial_blocked_front_p10_m": self.corridor_trial_blocked_front_p10_m,
+            "corridor_trial_blocked_elapsed_s": round(
+                0.0
+                if self.corridor_trial_blocked_since <= 0.0
+                else now - self.corridor_trial_blocked_since,
+                3,
+            ),
+            "corridor_trial_recoveries": int(self.corridor_trial_recoveries),
+            "corridor_trial_max_recoveries": int(self.corridor_trial_max_recoveries),
+            "corridor_trial_odom_fresh": self._odom_fresh(now),
+            "corridor_trial_rear_clear": self._rear_corridor_clear(),
+            "enable_corridor_deadend_turn": self.enable_corridor_deadend_turn,
+            "corridor_deadend_side_clear_m": self.corridor_deadend_side_clear_m,
+            "corridor_deadend_side_turn_degrees": self.corridor_deadend_side_turn_degrees,
+            "corridor_deadend_side_turn_angular_z": self.corridor_deadend_side_turn_angular_z,
+            "corridor_deadend_side_turn_sign": self.corridor_deadend_side_turn_sign,
+            "corridor_deadend_side_turn_remaining_s": round(
+                max(0.0, self.corridor_deadend_side_turn_until - time.monotonic()), 3
+            ),
+            "corridor_deadend_side_turn_tried": sorted(self.corridor_deadend_side_turn_tried),
+            "corridor_deadend_turnaround_degrees": self.corridor_deadend_turnaround_degrees,
+            "corridor_deadend_turnaround_angular_z": self.corridor_deadend_turnaround_angular_z,
+            "corridor_deadend_turnaround_sign": self.corridor_deadend_turnaround_sign,
+            "corridor_deadend_turnaround_remaining_s": round(
+                max(0.0, self.corridor_deadend_turnaround_until - time.monotonic()), 3
+            ),
             "spin_escape_degrees": self.spin_escape_degrees,
             "spin_escape_angular_z": self.spin_escape_angular_z,
             "spin_escape_remaining_s": round(
@@ -1037,6 +1636,7 @@ class ScanSafetyGuardNode(Node):
             ),
             "scan_fresh": bool(scan_fresh),
             "cmd_fresh": bool(cmd_fresh),
+            "odom_fresh": self._odom_fresh(now),
             "hard_stop_m": self.hard_stop_m,
             "slow_down_m": self.slow_down_m,
             "emergency_stop_m": self.emergency_stop_m,
@@ -1065,6 +1665,10 @@ class ScanSafetyGuardNode(Node):
             "hard_stop",
             "warning",
             "micro_adjust",
+            "corridor_trial",
+            "corridor_stuck",
+            "corridor_side_turn",
+            "corridor_turnaround",
             "escape_reverse",
             "spin_escape",
         ):
@@ -1086,6 +1690,13 @@ class ScanSafetyGuardNode(Node):
                 None if self.corridor_front_p10 is None else round(float(self.corridor_front_p10), 3)
             ),
             "corridor_front_valid_count": int(self.corridor_front_valid_count),
+            "rear_corridor_min_m": (
+                None if self.rear_corridor_min is None else round(float(self.rear_corridor_min), 3)
+            ),
+            "rear_corridor_p10_m": (
+                None if self.rear_corridor_p10 is None else round(float(self.rear_corridor_p10), 3)
+            ),
+            "rear_corridor_valid_count": int(self.rear_corridor_valid_count),
             "deadend_front_min_m": (
                 None if self.deadend_front_min is None else round(float(self.deadend_front_min), 3)
             ),
@@ -1122,6 +1733,9 @@ class ScanSafetyGuardNode(Node):
                 0.0 if self.corridor_stuck_since <= 0.0 else now - self.corridor_stuck_since,
                 3,
             ),
+            "corridor_trial_forward_progress_m": self._rounded_forward_progress(now),
+            "corridor_trial_recoveries": int(self.corridor_trial_recoveries),
+            "corridor_trial_rear_clear": self._rear_corridor_clear(),
             "spin_escape_degrees": self.spin_escape_degrees,
             "spin_escape_angular_z": self.spin_escape_angular_z,
             "spin_escape_remaining_s": round(
@@ -1148,9 +1762,15 @@ class ScanSafetyGuardNode(Node):
                 "front_min": None,
                 "front_p10": None,
                 "valid_count": 0,
-                "corridor_front_min": None,
-                "corridor_front_p10": None,
-                "corridor_valid_count": 0,
+            "corridor_front_min": None,
+            "corridor_front_p10": None,
+            "corridor_valid_count": 0,
+            "corridor_trial_front_min": None,
+            "corridor_trial_front_p10": None,
+            "corridor_trial_valid_count": 0,
+            "rear_corridor_min": None,
+                "rear_corridor_p10": None,
+                "rear_corridor_valid_count": 0,
                 "deadend_front_min": None,
                 "deadend_front_p10": None,
                 "deadend_front_valid_count": 0,
@@ -1170,6 +1790,8 @@ class ScanSafetyGuardNode(Node):
         micro_left_values = []
         micro_right_values = []
         corridor_values = []
+        corridor_trial_values = []
+        rear_corridor_values = []
         for index, value in enumerate(scan.ranges):
             if not math.isfinite(value):
                 continue
@@ -1190,6 +1812,17 @@ class ScanSafetyGuardNode(Node):
                     and abs(y_lateral) <= self.front_collision_corridor_half_width_m
                 ):
                     corridor_values.append(x_forward)
+                if (
+                    x_forward >= self.front_collision_min_x_m
+                    and abs(y_lateral) <= self.corridor_trial_center_half_width_m
+                ):
+                    corridor_trial_values.append(x_forward)
+                x_backward = -x_forward
+                if (
+                    x_backward >= self.front_collision_min_x_m
+                    and abs(y_lateral) <= self.front_collision_corridor_half_width_m
+                ):
+                    rear_corridor_values.append(x_backward)
             if value_f >= self.micro_adjust_min_valid_range_m:
                 if abs(angle) <= micro_half_rad:
                     micro_front_values.append(value_f)
@@ -1223,6 +1856,32 @@ class ScanSafetyGuardNode(Node):
                     "corridor_valid_count": 0,
                 }
             )
+        if corridor_trial_values:
+            corridor_trial_values.sort()
+            corridor_trial_p10_index = max(
+                0,
+                min(
+                    len(corridor_trial_values) - 1,
+                    math.ceil(len(corridor_trial_values) * 0.10) - 1,
+                ),
+            )
+            result.update(
+                {
+                    "corridor_trial_front_min": corridor_trial_values[0],
+                    "corridor_trial_front_p10": corridor_trial_values[
+                        corridor_trial_p10_index
+                    ],
+                    "corridor_trial_valid_count": len(corridor_trial_values),
+                }
+            )
+        else:
+            result.update(
+                {
+                    "corridor_trial_front_min": None,
+                    "corridor_trial_front_p10": None,
+                    "corridor_trial_valid_count": 0,
+                }
+            )
         if deadend_front_values:
             deadend_front_values.sort()
             deadend_p10_index = max(
@@ -1247,6 +1906,30 @@ class ScanSafetyGuardNode(Node):
                     "deadend_front_valid_count": 0,
                 }
             )
+        if rear_corridor_values:
+            rear_corridor_values.sort()
+            rear_p10_index = max(
+                0,
+                min(
+                    len(rear_corridor_values) - 1,
+                    math.ceil(len(rear_corridor_values) * 0.10) - 1,
+                ),
+            )
+            result.update(
+                {
+                    "rear_corridor_min": rear_corridor_values[0],
+                    "rear_corridor_p10": rear_corridor_values[rear_p10_index],
+                    "rear_corridor_valid_count": len(rear_corridor_values),
+                }
+            )
+        else:
+            result.update(
+                {
+                    "rear_corridor_min": None,
+                    "rear_corridor_p10": None,
+                    "rear_corridor_valid_count": 0,
+                }
+            )
         if not front_values:
             result.update({"front_min": None, "front_p10": None, "valid_count": 0})
             return result
@@ -1264,6 +1947,13 @@ class ScanSafetyGuardNode(Node):
     @staticmethod
     def _normalize_angle(angle: float) -> float:
         return math.atan2(math.sin(angle), math.cos(angle))
+
+    @staticmethod
+    def _yaw_from_quat(quat) -> float:
+        return math.atan2(
+            2.0 * (float(quat.w) * float(quat.z) + float(quat.x) * float(quat.y)),
+            1.0 - 2.0 * (float(quat.y) * float(quat.y) + float(quat.z) * float(quat.z)),
+        )
 
 
 def main(args=None):

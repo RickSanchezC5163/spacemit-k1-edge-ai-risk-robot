@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K1 2m SLAM + RRT + all YOLO risks + USB confirmation</title>
+<style>
+body{margin:0;background:#eef2f7;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:14px;padding:14px;box-sizing:border-box;max-width:1320px;margin:0 auto}
+.mapbox{background:#d8dee8;border:1px solid #a7b0bd;border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:center;min-width:0;overflow:hidden}
+.stage{position:relative;width:min(100%,76vh,900px);aspect-ratio:1/1;background:#fff;border:2px solid #111827;box-sizing:border-box}
+#mapImg,#overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+#mapImg{image-rendering:pixelated;pointer-events:none}
+#mapImg.flip-x{transform:scaleX(-1)}
+.panel{background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+h1{font-size:18px;margin:0;font-weight:500}
+.kv{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;font-size:13px}
+.k{color:#64748b}
+.mono,textarea{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+button,label{border:1px solid #cbd5e1;background:#f8fafc;border-radius:6px;padding:7px 9px;font-size:13px;cursor:pointer}
+.bar{display:flex;gap:7px;flex-wrap:wrap}
+.note{font-size:12px;color:#64748b;line-height:1.45}
+textarea{min-height:160px;width:100%;resize:vertical;border:1px solid #cbd5e1;border-radius:6px;padding:8px;background:#f8fafc;color:#111827;box-sizing:border-box}
+.ok{color:#047857;font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td,th{border-bottom:1px solid #e2e8f0;padding:5px;text-align:left}
+@media(max-width:1050px){.wrap{grid-template-columns:1fr}.stage{width:min(100%,82vh)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mapbox"><div id="stage" class="stage"><img id="mapImg" src="full_map_rrt_yolo_usb_20260720_012438_rectified.png"><canvas id="overlay"></canvas></div></div>
+  <div class="panel">
+    <h1>K1 自适应横平竖直叠图</h1>
+    <div class="kv"><div class="k">状态</div><div id="status" class="mono">loading</div></div>
+    <div class="kv"><div class="k">ROS/map</div><div id="coord" class="mono">x=--, y=--</div></div>
+    <div class="kv"><div class="k">最近对象</div><div id="near" class="mono">--</div></div>
+    <div class="kv"><div class="k">自动校正</div><div class="mono">rotate -0.50 deg</div></div>
+    <div class="kv"><div class="k">风险坐标</div><div class="mono">map=9, odom≈=0</div></div>
+    <div class="bar">
+      <label><input id="flipX" type="checkbox" checked>左右镜像显示</label>
+      <label><input id="grid" type="checkbox" checked>网格</label>
+      <label><input id="rrt" type="checkbox" checked>RRT</label>
+      <label><input id="risk" type="checkbox" checked>YOLO风险</label>
+      <label><input id="approach" type="checkbox" checked>approach</label>
+    </div>
+    <div class="bar"><button id="undo">撤销</button><button id="clear">清空</button><button id="copyJson">复制JSON</button><button id="copyCsv">复制CSV</button></div>
+    <div class="note">实心方块是 map 坐标风险点；叉号是 odom 近似候选，只能用于诊断。点击输出原始 ROS/map 坐标，不受左右镜像显示影响。</div>
+    <table><thead><tr><th>#</th><th>x</th><th>y</th><th>label</th></tr></thead><tbody id="tbody"></tbody></table>
+    <textarea id="out" spellcheck="false"></textarea>
+  </div>
+</div>
+<script>
+const DATA = {"title":"K1 2m SLAM + RRT + all YOLO risks + USB confirmation","raw_map":{"width":40,"height":40,"resolution":0.05,"origin":[-0.306,-0.284,0],"yaml":"outputs/k1_full_chain_final_20260720_012438/maps/map_final_20260720_012438.yaml"},"rectified_image":{"width":42,"height":42},"rotation_bounds":{"minx":-21,"miny":-21,"maxx":20,"maxy":20,"width":42,"height":42},"display":{"image":"full_map_rrt_yolo_usb_20260720_012438_rectified.png","rotation_deg":-0.5,"dominant_wall_angle_deg":0.5,"dominant_wall_confidence":0.96,"hough_line_count":17,"default_flip_x":true},"rrt_points":[{"source":"rrt_unlimited.log","goal_count":1,"x":0.409,"y":0.07,"reason":"wfd_free_roam","status":"status_4","time_s":1.77,"goal_clearance_m":0.25,"unknown_gain":7,"result_time_s":1.77,"rx":15.413,"ry":33.969},{"source":"rrt_unlimited.log","goal_count":2,"x":0.659,"y":0.27,"reason":"wfd_frontier","status":"status_4","time_s":5.5,"goal_clearance_m":0.4,"unknown_gain":41,"result_time_s":5.5,"rx":20.378,"ry":29.926},{"source":"rrt_unlimited.log","goal_count":3,"x":0.659,"y":0.602,"reason":"wfd_free_roam","status":"status_4","time_s":9.9,"goal_clearance_m":0.5,"unknown_gain":0,"result_time_s":9.9,"rx":20.32,"ry":23.286},{"source":"rrt_unlimited.log","goal_count":4,"x":0.83,"y":0.097,"reason":"wfd_free_roam","status":"progress_timeout","time_s":21.29,"goal_clearance_m":0.3,"unknown_gain":0,"result_time_s":21.29,"rx":23.828,"ry":33.356},{"source":"rrt_unlimited.log","goal_count":5,"x":0.369,"y":0.541,"reason":"wfd_free_roam","status":"physical_stuck","time_s":61.69,"goal_clearance_m":0.292,"unknown_gain":0,"result_time_s":61.69,"rx":14.531,"ry":24.557},{"source":"rrt_unlimited.log","goal_count":6,"x":0.419,"y":0.741,"reason":"wfd_free_roam","status":"progress_timeout","time_s":69.78,"goal_clearance_m":0.532,"unknown_gain":0,"result_time_s":69.78,"rx":15.496,"ry":20.548},{"source":"rrt_unlimited.log","goal_count":7,"x":0.869,"y":0.091,"reason":"wfd_free_roam","status":"progress_timeout","time_s":110.99,"goal_clearance_m":0.25,"unknown_gain":1,"result_time_s":110.99,"rx":24.609,"ry":33.469},{"source":"rrt_unlimited.log","goal_count":8,"x":0.419,"y":0.541,"reason":"wfd_free_roam","status":"status_4","time_s":141.35,"goal_clearance_m":0.32,"unknown_gain":0,"result_time_s":141.35,"rx":15.531,"ry":24.548},{"source":"rrt_unlimited.log","goal_count":9,"x":0.519,"y":0.891,"reason":"wfd_free_roam","status":"sent","time_s":146.05,"goal_clearance_m":0.354,"unknown_gain":0,"rx":17.47,"ry":17.531},{"source":"rrt_resume_after_risk_011900.log","goal_count":1,"x":0.519,"y":0.891,"reason":"wfd_free_roam","status":"progress_timeout","time_s":2.22,"goal_clearance_m":0.354,"unknown_gain":0,"result_time_s":2.22,"rx":17.47,"ry":17.531},{"source":"rrt_resume_after_risk_011900.log","goal_count":2,"x":0.719,"y":0.041,"reason":"wfd_free_roam","status":"physical_stuck","time_s":32.55,"goal_clearance_m":0.25,"unknown_gain":5,"result_time_s":32.55,"rx":21.618,"ry":34.495},{"source":"rrt_resume_after_risk_011900.log","goal_count":3,"x":0.719,"y":0.791,"reason":"wfd_free_roam","status":"progress_timeout","time_s":40.96,"goal_clearance_m":0.354,"unknown_gain":0,"result_time_s":40.96,"rx":21.487,"ry":19.496},{"source":"rrt_resume_after_risk_011900.log","goal_count":4,"x":0.519,"y":0.841,"reason":"wfd_free_roam","status":"progress_timeout","time_s":77.24,"goal_clearance_m":0.391,"unknown_gain":0,"result_time_s":77.24,"rx":17.478,"ry":18.531},{"source":"rrt_resume_after_risk_011900.log","goal_count":5,"x":0.319,"y":0.791,"reason":"wfd_free_roam","status":"status_4","time_s":107.68,"goal_clearance_m":0.4,"unknown_gain":0,"result_time_s":107.68,"rx":13.487,"ry":19.566},{"source":"rrt_resume_after_risk_011900.log","goal_count":6,"x":0.669,"y":0.691,"reason":"wfd_free_roam","status":"physical_stuck","time_s":112.35,"goal_clearance_m":0.4,"unknown_gain":0,"result_time_s":112.35,"rx":20.504,"ry":21.504},{"source":"rrt_resume_after_risk_011900.log","goal_count":7,"x":0.619,"y":0.491,"reason":"wfd_free_roam","status":"progress_timeout","time_s":122.44,"goal_clearance_m":0.447,"unknown_gain":0,"result_time_s":122.44,"rx":19.539,"ry":25.513},{"source":"rrt_resume_after_risk_011900.log","goal_count":8,"x":0.569,"y":0.891,"reason":"wfd_free_roam","status":"status_4","time_s":156.42,"goal_clearance_m":0.32,"unknown_gain":0,"result_time_s":156.42,"rx":18.47,"ry":17.522},{"source":"rrt_resume_after_risk_011900.log","goal_count":9,"x":0.869,"y":0.741,"reason":"wfd_free_roam","status":"progress_timeout","time_s":160.81,"goal_clearance_m":0.354,"unknown_gain":0,"result_time_s":160.81,"rx":24.496,"ry":20.469},{"source":"rrt_resume_after_risk_011900.log","goal_count":10,"x":0.469,"y":0.491,"reason":"wfd_free_roam","status":"physical_stuck","time_s":191.18,"goal_clearance_m":0.32,"unknown_gain":0,"result_time_s":191.18,"rx":16.539,"ry":25.539},{"source":"rrt_resume_after_risk_011900.log","goal_count":11,"x":0.269,"y":0.591,"reason":"wfd_free_roam","status":"progress_timeout","time_s":200.85,"goal_clearance_m":0.304,"unknown_gain":0,"result_time_s":200.85,"rx":12.522,"ry":23.574},{"source":"rrt_resume_after_risk_011900.log","goal_count":12,"x":0.669,"y":0.641,"reason":"wfd_free_roam","status":"status_4","time_s":234.84,"goal_clearance_m":0.4,"unknown_gain":0,"result_time_s":234.84,"rx":20.513,"ry":22.504},{"source":"rrt_resume_after_risk_011900.log","goal_count":13,"x":0.619,"y":0.291,"reason":"wfd_free_roam","status":"status_4","time_s":238.83,"goal_clearance_m":0.4,"unknown_gain":0,"result_time_s":238.83,"rx":19.574,"ry":29.513},{"source":"rrt_resume_after_risk_011900.log","goal_count":14,"x":0.619,"y":0.841,"reason":"wfd_free_roam","status":"physical_stuck","time_s":242.73,"goal_clearance_m":0.361,"unknown_gain":0,"result_time_s":242.73,"rx":19.478,"ry":18.513},{"source":"rrt_resume_after_risk_011900.log","goal_count":15,"x":0.819,"y":0.741,"reason":"wfd_free_roam","status":"progress_timeout","time_s":246.6,"goal_clearance_m":0.4,"unknown_gain":0,"result_time_s":246.6,"rx":23.496,"ry":20.478},{"source":"rrt_resume_after_risk_011900.log","goal_count":16,"x":0.619,"y":0.791,"reason":"wfd_free_roam","status":"progress_timeout","time_s":286.05,"goal_clearance_m":0.403,"unknown_gain":0,"result_time_s":286.05,"rx":19.487,"ry":19.513},{"source":"rrt_resume_after_risk_011900.log","goal_count":17,"x":0.219,"y":0.541,"reason":"wfd_free_roam","status":"physical_stuck","time_s":316.45,"goal_clearance_m":0.25,"unknown_gain":0,"result_time_s":316.45,"rx":11.531,"ry":24.583},{"source":"rrt_resume_after_risk_011900.log","goal_count":18,"x":0.419,"y":0.741,"reason":"wfd_free_roam","status":"sent","time_s":322.98,"goal_clearance_m":0.566,"unknown_gain":0,"rx":15.496,"ry":20.548}],"risk_points":[{"event_id":"risk_event_20260719T171602758","class_name":"corrosion","confidence":0.2477,"distance_m":0.936,"candidate_kind":"approach_candidate","x":1.041,"y":0.0074,"frame_kind":"map","projection":{"capture_ros_time_ns":1784481361669941790,"pose_quality":0.979,"source_frame":"d435_color_optical_frame","status":"projected_capture_time_tf_chain","target_frame":"map"},"source":"risk_events.jsonl","rx":28.063,"ry":35.111},{"event_id":"risk_event_20260719T171711942","class_name":"corrosion","confidence":0.764,"distance_m":0.447,"candidate_kind":"formal","x":1.0406,"y":0.0024,"frame_kind":"map","projection":{"capture_ros_time_ns":1784481430805093851,"pose_quality":0.6606,"source_frame":"d435_color_optical_frame","status":"projected_capture_time_tf_chain","target_frame":"map"},"source":"risk_events.jsonl","rx":28.056,"ry":35.211},{"event_id":"risk_event_20260719T171726954","class_name":"blockage","confidence":0.1608,"distance_m":0.615,"candidate_kind":"approach_candidate","x":0.0932,"y":0.407,"frame_kind":"map","projection":{"capture_ros_time_ns":1784481445710776288,"pose_quality":0.9428,"source_frame":"d435_color_optical_frame","status":"projected_capture_time_tf_chain","target_frame":"map"},"source":"risk_events.jsonl","rx":9.038,"ry":27.285},{"event_id":"risk_event_20260719T171829228","class_name":"blockage","confidence":0.7243,"distance_m":0.502,"candidate_kind":"formal","x":0.089,"y":0.4213,"frame_kind":"map","projection":{"capture_ros_time_ns":1784481508341265152,"pose_quality":0.5123,"source_frame":"d435_color_optical_frame","status":"projected_capture_time_tf_chain","target_frame":"map"},"source":"risk_events.jsonl","rx":8.952,"ry":26.999},{"event_id":"risk_event_20260719T172119702","class_name":"crack","confidence":0.1685,"distance_m":0.798,"candidate_kind":"approach_candidate","x":0.0613,"y":1.5598,"frame_kind":"map","projection":{"capture_ros_time_ns":1784481678575112816,"pose_quality":0.5154,"source_frame":"d435_color_optical_frame","status":"projected_capture_time_tf_chain","target_frame":"map"},"source":"risk_events.jsonl","rx":8.199,"ry":4.235},{"event_id":"risk_event_20260719T172315553","class_name":"corrosion","confidence":0.8102,"distance_m":0.638,"candidate_kind":"formal","x":1.1039,"y":0.07,"frame_kind":"map","projection":{"capture_ros_time_ns":1784481794678835056,"pose_quality":0.9277,"source_frame":"d435_color_optical_frame","status":"projected_capture_time_tf_chain","target_frame":"map"},"source":"risk_events.jsonl","rx":29.31,"ry":33.848},{"event_id":"spatial_candidate_0001","class_name":"corrosion","confidence":0.466,"distance_m":0.404,"candidate_kind":"confirmed","x":1.0887,"y":0.0875,"frame_kind":"map","projection":"confirmed","source":"mission_confirmed_risk_map_points.json","rx":29.003,"ry":33.501},{"event_id":"spatial_candidate_0004","class_name":"blockage","confidence":0.4871,"distance_m":0.332,"candidate_kind":"confirmed","x":0.1077,"y":0.4341,"frame_kind":"map","projection":"confirmed","source":"mission_confirmed_risk_map_points.json","rx":9.324,"ry":26.74},{"event_id":"spatial_candidate_0008","class_name":"crack","confidence":0.1685,"distance_m":null,"candidate_kind":"confirmed","x":0.0613,"y":1.5598,"frame_kind":"map","projection":"confirmed","source":"mission_confirmed_risk_map_points.json","rx":8.199,"ry":4.235}],"approach_points":[{"x":0.0,"y":0.0,"role":"robot","state":"passive_candidate_recorded","event_id":"risk_event_20260719T171602758","frame_kind":"odom_approx","rx":7.245,"ry":35.441},{"x":1.041,"y":0.0071,"role":"approach_target","state":"passive_candidate_recorded","event_id":"risk_event_20260719T171602758","frame_kind":"odom_approx","rx":28.063,"ry":35.117},{"x":0.7264,"y":0.5543,"role":"robot","state":"passive_candidate_recorded","event_id":"risk_event_20260719T171711942","frame_kind":"odom_approx","rx":21.676,"ry":24.228},{"x":0.9958,"y":0.0516,"role":"approach_target","state":"passive_candidate_recorded","event_id":"risk_event_20260719T171711942","frame_kind":"odom_approx","rx":27.152,"ry":34.235},{"x":0.3587,"y":0.4328,"role":"robot","state":"already_near","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":14.344,"ry":26.722},{"x":-0.0635,"y":0.4581,"role":"approach_target","state":"already_near","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":5.896,"ry":26.29},{"x":0.3587,"y":0.4328,"role":"robot","state":"close_usb_confirm_complete","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":14.344,"ry":26.722},{"x":-0.0635,"y":0.4581,"role":"approach_target","state":"close_usb_confirm_complete","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":5.896,"ry":26.29},{"x":0.3587,"y":0.4328,"role":"robot","state":"arm_semantic_switch_started","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":14.344,"ry":26.722},{"x":-0.0635,"y":0.4581,"role":"approach_target","state":"arm_semantic_switch_started","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":5.896,"ry":26.29},{"x":0.3587,"y":0.4328,"role":"robot","state":"arm_semantic_switch_complete","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":14.344,"ry":26.722},{"x":-0.0635,"y":0.4581,"role":"approach_target","state":"arm_semantic_switch_complete","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":5.896,"ry":26.29},{"x":0.3587,"y":0.4328,"role":"robot","state":"confirmed_map_point_written","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":14.344,"ry":26.722},{"x":-0.0635,"y":0.4581,"role":"approach_target","state":"confirmed_map_point_written","event_id":"risk_event_20260719T171829228","frame_kind":"odom_approx","rx":5.896,"ry":26.29},{"x":0.4601,"y":0.6438,"role":"robot","state":"passive_candidate_recorded","event_id":"risk_event_20260719T172315553","frame_kind":"odom_approx","rx":16.335,"ry":22.485},{"x":0.9175,"y":0.0047,"role":"approach_target","state":"passive_candidate_recorded","event_id":"risk_event_20260719T172315553","frame_kind":"odom_approx","rx":25.594,"ry":35.186}],"summary":{"rrt_count":27,"risk_count":9,"risk_map_count":9,"risk_odom_approx_count":0,"approach_count":16}};
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const img = document.getElementById('mapImg');
+const coord = document.getElementById('coord');
+const nearBox = document.getElementById('near');
+const tbody = document.getElementById('tbody');
+const out = document.getElementById('out');
+let manual = [];
+let hover = null;
+
+function isFlip() { return document.getElementById('flipX').checked; }
+function fit() {
+  const r = stage.getBoundingClientRect();
+  const iw = DATA.rectified_image.width, ih = DATA.rectified_image.height;
+  const s = Math.min(r.width / iw, r.height / ih);
+  const w = iw * s, h = ih * s;
+  return {s, x:(r.width-w)/2, y:(r.height-h)/2, w, h};
+}
+function rectToScreen(rx, ry) {
+  const f = fit();
+  let x = rx;
+  if (isFlip()) x = DATA.rectified_image.width - x;
+  return {x:f.x + x*f.s, y:f.y + ry*f.s};
+}
+function screenToRect(x, y) {
+  const f = fit();
+  let rx = (x - f.x) / f.s;
+  if (isFlip()) rx = DATA.rectified_image.width - rx;
+  return {rx, ry:(y - f.y) / f.s};
+}
+function rectToWorld(rx, ry) {
+  const W = DATA.raw_map.width, H = DATA.raw_map.height;
+  const res = DATA.raw_map.resolution, ox = DATA.raw_map.origin[0], oy = DATA.raw_map.origin[1];
+  const b = DATA.rotation_bounds, angle = -DATA.display.rotation_deg * Math.PI / 180;
+  const xr = rx + b.minx, yr = ry + b.miny;
+  const dx = xr * Math.cos(angle) - yr * Math.sin(angle);
+  const dy = xr * Math.sin(angle) + yr * Math.cos(angle);
+  const px = dx + W/2, py = dy + H/2;
+  return {x: ox + px*res, y: oy + H*res - py*res};
+}
+function worldToRect(x, y) {
+  const W = DATA.raw_map.width, H = DATA.raw_map.height;
+  const res = DATA.raw_map.resolution, ox = DATA.raw_map.origin[0], oy = DATA.raw_map.origin[1];
+  const b = DATA.rotation_bounds, angle = DATA.display.rotation_deg * Math.PI / 180;
+  const px = (x - ox) / res, py = (oy + H*res - y) / res;
+  const dx = px - W/2, dy = py - H/2;
+  return {rx: dx*Math.cos(angle) - dy*Math.sin(angle) - b.minx,
+           ry: dx*Math.sin(angle) + dy*Math.cos(angle) - b.miny};
+}
+function colorRisk(cls) { return {blockage:'#dc2626', corrosion:'#9333ea', crack:'#2563eb', leakage:'#0891b2'}[cls] || '#111827'; }
+function colorRrt(status) { return {status_4:'#16a34a', progress_timeout:'#f97316', result_timeout:'#f97316', status_6:'#dc2626', sent:'#2563eb'}[status] || '#2563eb'; }
+function mark(rx, ry, color, shape, text, dashed=false) {
+  const p = rectToScreen(rx, ry);
+  ctx.save();
+  ctx.lineWidth = 2.4;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  if (dashed) ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  if (shape === 'x') {
+    ctx.lineWidth = 4;
+    ctx.moveTo(p.x-8, p.y-8); ctx.lineTo(p.x+8, p.y+8);
+    ctx.moveTo(p.x+8, p.y-8); ctx.lineTo(p.x-8, p.y+8);
+    ctx.stroke();
+  } else if (shape === 'square') {
+    ctx.rect(p.x-7, p.y-7, 14, 14); ctx.fill(); ctx.strokeStyle = '#111827'; ctx.stroke();
+  } else if (shape === 'diamond') {
+    ctx.moveTo(p.x, p.y-8); ctx.lineTo(p.x+8, p.y); ctx.lineTo(p.x, p.y+8); ctx.lineTo(p.x-8, p.y); ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#111827'; ctx.stroke();
+  } else {
+    ctx.arc(p.x, p.y, 6, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#111827'; ctx.stroke();
+  }
+  if (text) {
+    ctx.setLineDash([]);
+    ctx.font = '12px ui-monospace,monospace';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(255,255,255,.95)';
+    ctx.fillStyle = '#111827';
+    ctx.strokeText(text, p.x+10, p.y-6);
+    ctx.fillText(text, p.x+10, p.y-6);
+  }
+  ctx.restore();
+}
+function resize() {
+  const r = stage.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  canvas.width = Math.round(r.width*d); canvas.height = Math.round(r.height*d);
+  ctx.setTransform(d,0,0,d,0,0);
+  draw();
+}
+function drawGrid() {
+  const f = fit();
+  ctx.save();
+  ctx.strokeStyle = 'rgba(15,23,42,.15)';
+  ctx.lineWidth = 1;
+  for (let x=f.x; x<=f.x+f.w; x+=f.s*5) { ctx.beginPath(); ctx.moveTo(x,f.y); ctx.lineTo(x,f.y+f.h); ctx.stroke(); }
+  for (let y=f.y; y<=f.y+f.h; y+=f.s*5) { ctx.beginPath(); ctx.moveTo(f.x,y); ctx.lineTo(f.x+f.w,y); ctx.stroke(); }
+  ctx.restore();
+}
+function draw() {
+  img.classList.toggle('flip-x', isFlip());
+  const r = stage.getBoundingClientRect();
+  ctx.clearRect(0,0,r.width,r.height);
+  if (document.getElementById('grid').checked) drawGrid();
+  if (document.getElementById('rrt').checked) DATA.rrt_points.forEach(p => mark(p.rx, p.ry, colorRrt(p.status), 'circle', 'R'+p.goal_count));
+  if (document.getElementById('risk').checked) DATA.risk_points.forEach(p => {
+    const mapPoint = p.frame_kind === 'map';
+    mark(p.rx, p.ry, colorRisk(p.class_name), mapPoint ? 'square' : 'x', p.class_name + ' ' + Number(p.confidence || 0).toFixed(2) + (mapPoint ? '' : ' odom≈'), !mapPoint);
+  });
+  if (document.getElementById('approach').checked) DATA.approach_points.forEach(p => mark(p.rx, p.ry, p.role === 'robot' ? '#ec4899' : '#111827', 'diamond', p.role));
+  manual.forEach((p, i) => {
+    const q = worldToRect(p.x, p.y);
+    mark(q.rx, q.ry, '#06b6d4', 'diamond', 'P'+(i+1)+(p.label ? ' '+p.label : ''));
+  });
+  if (hover) mark(hover.rx, hover.ry, '#111827', 'circle', '');
+  renderRows();
+}
+function visibleObjects() {
+  let out = [];
+  if (document.getElementById('rrt').checked) out = out.concat(DATA.rrt_points.map(p => Object.assign({kind:'RRT', label:'RRT R'+p.goal_count+' '+p.status}, p)));
+  if (document.getElementById('risk').checked) out = out.concat(DATA.risk_points.map(p => Object.assign({kind:'risk', label:p.class_name+' '+Number(p.confidence || 0).toFixed(2)+' '+p.frame_kind}, p)));
+  return out;
+}
+function nearest(rx, ry) {
+  let best = null, bestD = 1e9;
+  visibleObjects().forEach(p => {
+    const d = Math.hypot(p.rx-rx, p.ry-ry);
+    if (d < bestD) { best = p; bestD = d; }
+  });
+  return bestD < 14 ? best : null;
+}
+function rows() { return manual.map((p,i) => ({id:'manual_'+(i+1), x:+p.x.toFixed(4), y:+p.y.toFixed(4), label:p.label || ''})); }
+function updateOut() { out.value = JSON.stringify(rows(), null, 2); }
+function renderRows() {
+  tbody.innerHTML = '';
+  manual.forEach((p,i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+(i+1)+'</td><td>'+p.x.toFixed(3)+'</td><td>'+p.y.toFixed(3)+'</td><td contenteditable data-i="'+i+'">'+(p.label || '')+'</td>';
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[contenteditable]').forEach(td => td.oninput = e => { manual[Number(e.target.dataset.i)].label = e.target.textContent.trim(); updateOut(); draw(); });
+  updateOut();
+}
+canvas.addEventListener('mousemove', ev => {
+  const r = canvas.getBoundingClientRect();
+  const q = screenToRect(ev.clientX-r.left, ev.clientY-r.top);
+  const w = rectToWorld(q.rx, q.ry);
+  const n = nearest(q.rx, q.ry);
+  hover = q;
+  coord.textContent = 'x=' + w.x.toFixed(4) + ', y=' + w.y.toFixed(4);
+  nearBox.textContent = n ? n.label + ' @ ' + n.x.toFixed(3) + ',' + n.y.toFixed(3) : '--';
+  draw();
+});
+canvas.addEventListener('mouseleave', () => { hover = null; coord.textContent='x=--, y=--'; nearBox.textContent='--'; draw(); });
+canvas.addEventListener('click', ev => {
+  const r = canvas.getBoundingClientRect();
+  const q = screenToRect(ev.clientX-r.left, ev.clientY-r.top);
+  const w = rectToWorld(q.rx, q.ry);
+  manual.push({x:w.x, y:w.y, label:''});
+  draw();
+});
+['flipX','grid','rrt','risk','approach'].forEach(id => document.getElementById(id).onchange = draw);
+document.getElementById('undo').onclick = () => { manual.pop(); draw(); };
+document.getElementById('clear').onclick = () => { manual = []; draw(); };
+document.getElementById('copyJson').onclick = () => navigator.clipboard.writeText(out.value);
+document.getElementById('copyCsv').onclick = () => navigator.clipboard.writeText(['id,x,y,label'].concat(rows().map(p => p.id+','+p.x+','+p.y+','+String(p.label).replace(/,/g,' '))).join('\n'));
+document.getElementById('status').textContent = 'ready rrt=' + DATA.summary.rrt_count + ' risk=' + DATA.summary.risk_count;
+document.getElementById('status').className = 'mono ok';
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>

@@ -5,11 +5,12 @@ import json
 import math
 import random
 import time
+import zlib
 from pathlib import Path
 
 import rclpy
-from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import PoseStamped, Twist
+from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -42,8 +43,30 @@ def quantize_angle(angle, step_rad):
     return round(angle / step_rad) * step_rad
 
 
+def angle_diff(a, b):
+    return math.atan2(math.sin(a - b), math.cos(a - b))
+
+
 def clamp(value, lo, hi):
     return max(lo, min(hi, value))
+
+
+def occupancy_grid_signature(msg):
+    """Return a content signature without retaining another map-sized copy."""
+    try:
+        payload = memoryview(msg.data).cast("B")
+    except TypeError:
+        payload = bytes((int(value) & 0xFF for value in msg.data))
+    info = msg.info
+    origin = info.origin.position
+    return (
+        int(info.width),
+        int(info.height),
+        round(float(info.resolution), 9),
+        round(float(origin.x), 6),
+        round(float(origin.y), 6),
+        zlib.crc32(payload),
+    )
 
 
 class RRTFrontierExplorer(Node):
@@ -51,6 +74,12 @@ class RRTFrontierExplorer(Node):
         super().__init__("sim_rrt_frontier_explorer")
         self.args = args
         self.map_msg = None
+        self.map_signature = None
+        self.map_generation = 0
+        self.last_planned_map_generation = -1
+        self.last_map_change_monotonic = None
+        self.planning_cycles = 0
+        self.identical_map_updates = 0
         self.risk_detected = False
         self.records = []
         self.goal_count = 0
@@ -61,10 +90,27 @@ class RRTFrontierExplorer(Node):
         self.last_goal_meta = {}
         self.current_sample_radius_m = float(args.sample_radius_m)
         self.random = random.Random(args.seed)
+        self.last_physical_cmd_linear = 0.0
+        self.last_physical_cmd_angular = 0.0
+        self.last_physical_cmd_time = None
+        self.last_odom_linear = 0.0
+        self.last_odom_angular = 0.0
+        self.last_odom_time = None
+        self.physical_stuck_since = None
+        self.physical_stuck_kind = None
+        self.physical_stuck_escape_sign = 1.0
         self.goal_pub = self.create_publisher(PoseStamped, args.goal_topic, 10)
+        self.physical_stuck_escape_pub = None
+        if args.physical_stuck_escape_cmd_topic:
+            self.physical_stuck_escape_pub = self.create_publisher(
+                Twist, args.physical_stuck_escape_cmd_topic, 10
+            )
         self.create_subscription(OccupancyGrid, args.map_topic, self.map_cb, 10)
         if args.stop_on_risk_topic:
             self.create_subscription(String, args.stop_on_risk_topic, self.risk_cb, 10)
+        if args.physical_stuck_s > 0:
+            self.create_subscription(Twist, args.physical_stuck_cmd_topic, self.physical_cmd_cb, 10)
+            self.create_subscription(Odometry, args.physical_stuck_odom_topic, self.odom_cb, 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.nav2_client = None
@@ -72,7 +118,35 @@ class RRTFrontierExplorer(Node):
             self.nav2_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
 
     def map_cb(self, msg):
+        signature = occupancy_grid_signature(msg)
+        if signature != self.map_signature:
+            self.map_signature = signature
+            self.map_generation += 1
+            self.last_map_change_monotonic = time.monotonic()
+        else:
+            self.identical_map_updates += 1
         self.map_msg = msg
+
+    def spin_wait(self, timeout_s, wake_on_map_change=False):
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        initial_generation = self.map_generation
+        while rclpy.ok() and time.monotonic() < deadline:
+            if self.risk_detected:
+                return "risk_detected"
+            if wake_on_map_change and self.map_generation != initial_generation:
+                return "map_changed"
+            rclpy.spin_once(self, timeout_sec=min(0.1, max(0.0, deadline - time.monotonic())))
+        return "timeout"
+
+    def physical_cmd_cb(self, msg):
+        self.last_physical_cmd_linear = float(msg.linear.x)
+        self.last_physical_cmd_angular = float(msg.angular.z)
+        self.last_physical_cmd_time = time.monotonic()
+
+    def odom_cb(self, msg):
+        self.last_odom_linear = float(msg.twist.twist.linear.x)
+        self.last_odom_angular = float(msg.twist.twist.angular.z)
+        self.last_odom_time = time.monotonic()
 
     def risk_cb(self, msg):
         try:
@@ -103,6 +177,90 @@ class RRTFrontierExplorer(Node):
             return None
         t = tf.transform.translation
         return float(t.x), float(t.y), yaw_from_quat(tf.transform.rotation)
+
+    def physical_stuck_detected(self, now):
+        if self.args.physical_stuck_s <= 0:
+            self.physical_stuck_since = None
+            self.physical_stuck_kind = None
+            return False
+        if self.last_physical_cmd_time is None or self.last_odom_time is None:
+            self.physical_stuck_since = None
+            self.physical_stuck_kind = None
+            return False
+        if now - self.last_physical_cmd_time > self.args.physical_stuck_cmd_timeout_s:
+            self.physical_stuck_since = None
+            self.physical_stuck_kind = None
+            return False
+        if now - self.last_odom_time > self.args.physical_stuck_odom_timeout_s:
+            self.physical_stuck_since = None
+            self.physical_stuck_kind = None
+            return False
+        linear_stalled = (
+            abs(self.last_physical_cmd_linear) > self.args.physical_stuck_cmd_linear_mps
+            and abs(self.last_odom_linear) < self.args.physical_stuck_odom_linear_mps
+        )
+        angular_stalled = (
+            abs(self.last_physical_cmd_angular) > self.args.physical_stuck_cmd_angular_radps
+            and abs(self.last_odom_angular) < self.args.physical_stuck_odom_angular_radps
+        )
+        if linear_stalled or angular_stalled:
+            self.physical_stuck_kind = "linear" if linear_stalled else "angular"
+            if self.physical_stuck_since is None:
+                self.physical_stuck_since = now
+                return False
+            return now - self.physical_stuck_since >= self.args.physical_stuck_s
+        self.physical_stuck_since = None
+        self.physical_stuck_kind = None
+        return False
+
+    def cancel_goal(self, handle):
+        cancel_future = handle.cancel_goal_async()
+        cancel_deadline = time.monotonic() + self.args.goal_cancel_timeout_s
+        while rclpy.ok() and not cancel_future.done() and time.monotonic() < cancel_deadline:
+            rclpy.spin_once(self, timeout_sec=0.05)
+
+    def publish_physical_stuck_escape(self, stuck_kind):
+        if self.physical_stuck_escape_pub is None:
+            return {"published": False}
+        if stuck_kind == "angular" and abs(self.last_physical_cmd_angular) > 1e-6:
+            sign = -math.copysign(1.0, self.last_physical_cmd_angular)
+        else:
+            sign = self.physical_stuck_escape_sign
+        self.physical_stuck_escape_sign *= -1.0
+        reverse_s = (
+            0.0
+            if stuck_kind == "angular"
+            else max(0.0, self.args.physical_stuck_escape_reverse_s)
+        )
+        turn_s = max(0.0, self.args.physical_stuck_escape_turn_s)
+        rate_s = 1.0 / max(1.0, self.args.physical_stuck_escape_rate_hz)
+        started = time.monotonic()
+        msg = Twist()
+        msg.linear.x = -abs(self.args.physical_stuck_escape_reverse_mps)
+        msg.angular.z = sign * abs(self.args.physical_stuck_escape_angular_radps)
+        while rclpy.ok() and time.monotonic() - started < reverse_s:
+            self.physical_stuck_escape_pub.publish(msg)
+            rclpy.spin_once(self, timeout_sec=0.0)
+            time.sleep(rate_s)
+        turn_started = time.monotonic()
+        msg = Twist()
+        msg.angular.z = sign * abs(self.args.physical_stuck_escape_angular_radps)
+        while rclpy.ok() and time.monotonic() - turn_started < turn_s:
+            self.physical_stuck_escape_pub.publish(msg)
+            rclpy.spin_once(self, timeout_sec=0.0)
+            time.sleep(rate_s)
+        self.physical_stuck_escape_pub.publish(Twist())
+        self.physical_stuck_since = None
+        detail = {
+            "published": True,
+            "stuck_kind": stuck_kind,
+            "reverse_mps": round(-abs(self.args.physical_stuck_escape_reverse_mps), 3),
+            "reverse_s": round(reverse_s, 3),
+            "angular_radps": round(sign * abs(self.args.physical_stuck_escape_angular_radps), 3),
+            "turn_s": round(turn_s, 3),
+        }
+        print("RRT_ESCAPE", json.dumps({"reason": "physical_stuck", **detail}), flush=True)
+        return detail
 
     def wait_ready(self):
         deadline = time.monotonic() + self.args.wait_ready_s
@@ -197,19 +355,32 @@ class RRTFrontierExplorer(Node):
         )
 
     def near_suppressed_goal(self, cell):
+        now = time.monotonic()
         recent_dist_cells = max(1, int(self.args.goal_separation_m / self.map_msg.info.resolution))
         recent_dist_sq = recent_dist_cells * recent_dist_cells
         if self.args.rejected_goal_memory > 0:
+            if self.args.rejected_goal_cooldown_s > 0:
+                self.rejected_cells = [
+                    entry
+                    for entry in self.rejected_cells
+                    if now - entry[1] < self.args.rejected_goal_cooldown_s
+                ]
             rejected_dist_cells = max(
                 recent_dist_cells,
                 int(self.args.rejected_goal_separation_m / self.map_msg.info.resolution),
             )
             rejected_dist_sq = rejected_dist_cells * rejected_dist_cells
-            for old in self.rejected_cells[-self.args.rejected_goal_memory :]:
+            for old, _ in self.rejected_cells[-self.args.rejected_goal_memory :]:
                 if (cell[0] - old[0]) ** 2 + (cell[1] - old[1]) ** 2 <= rejected_dist_sq:
                     return True
         if self.args.recent_goal_memory > 0:
-            for old in self.recent_goal_cells[-self.args.recent_goal_memory :]:
+            if self.args.recent_goal_cooldown_s > 0:
+                self.recent_goal_cells = [
+                    entry
+                    for entry in self.recent_goal_cells
+                    if now - entry[1] < self.args.recent_goal_cooldown_s
+                ]
+            for old, _ in self.recent_goal_cells[-self.args.recent_goal_memory :]:
                 if (cell[0] - old[0]) ** 2 + (cell[1] - old[1]) ** 2 <= recent_dist_sq:
                     return True
         return False
@@ -716,7 +887,12 @@ class RRTFrontierExplorer(Node):
             "feedback_seen": False,
             "last_distance": None,
             "last_improved": time.monotonic(),
+            "last_pose_distance": None,
+            "last_heading_error": None,
         }
+        goal_x = float(goal.pose.position.x)
+        goal_y = float(goal.pose.position.y)
+        yaw_epsilon = math.radians(self.args.goal_progress_yaw_epsilon_deg)
 
         def feedback_cb(msg):
             feedback = getattr(msg, "feedback", None)
@@ -751,28 +927,51 @@ class RRTFrontierExplorer(Node):
         while rclpy.ok() and not result_future.done() and time.monotonic() < deadline:
             rclpy.spin_once(self, timeout_sec=0.1)
             if self.risk_detected:
-                cancel_future = handle.cancel_goal_async()
-                cancel_deadline = time.monotonic() + self.args.goal_cancel_timeout_s
-                while rclpy.ok() and not cancel_future.done() and time.monotonic() < cancel_deadline:
-                    rclpy.spin_once(self, timeout_sec=0.05)
+                self.cancel_goal(handle)
                 return "risk_detected"
             now = time.monotonic()
+            if self.physical_stuck_detected(now):
+                detail = {
+                    "stuck_kind": self.physical_stuck_kind,
+                    "cmd_linear_x": round(self.last_physical_cmd_linear, 3),
+                    "cmd_angular_z": round(self.last_physical_cmd_angular, 3),
+                    "odom_linear_x": round(self.last_odom_linear, 3),
+                    "odom_angular_z": round(self.last_odom_angular, 3),
+                    "duration_s": round(now - (self.physical_stuck_since or now), 2),
+                }
+                print("RRT_PHYSICAL_STUCK", json.dumps(detail), flush=True)
+                self.cancel_goal(handle)
+                return "physical_stuck"
+            pose = self.robot_pose()
+            if pose is not None:
+                dx = goal_x - pose[0]
+                dy = goal_y - pose[1]
+                pose_distance = math.hypot(dx, dy)
+                target_yaw = math.atan2(dy, dx) if pose_distance > 1e-6 else pose[2]
+                heading_error = abs(angle_diff(target_yaw, pose[2]))
+                pose_improved = (
+                    progress["last_pose_distance"] is None
+                    or pose_distance
+                    < progress["last_pose_distance"] - self.args.goal_progress_epsilon_m
+                    or (
+                        progress["last_heading_error"] is not None
+                        and heading_error < progress["last_heading_error"] - yaw_epsilon
+                    )
+                )
+                if pose_improved:
+                    progress["last_pose_distance"] = pose_distance
+                    progress["last_heading_error"] = heading_error
+                    progress["last_improved"] = now
             if (
                 self.args.goal_progress_timeout_s > 0
                 and progress["feedback_seen"]
                 and now - accepted_at >= self.args.goal_progress_grace_s
                 and now - progress["last_improved"] >= self.args.goal_progress_timeout_s
             ):
-                cancel_future = handle.cancel_goal_async()
-                cancel_deadline = time.monotonic() + self.args.goal_cancel_timeout_s
-                while rclpy.ok() and not cancel_future.done() and time.monotonic() < cancel_deadline:
-                    rclpy.spin_once(self, timeout_sec=0.05)
+                self.cancel_goal(handle)
                 return "progress_timeout"
         if not result_future.done():
-            cancel_future = handle.cancel_goal_async()
-            cancel_deadline = time.monotonic() + self.args.goal_cancel_timeout_s
-            while rclpy.ok() and not cancel_future.done() and time.monotonic() < cancel_deadline:
-                rclpy.spin_once(self, timeout_sec=0.05)
+            self.cancel_goal(handle)
             return "result_timeout"
         result = result_future.result()
         return f"status_{getattr(result, 'status', 'unknown')}"
@@ -784,6 +983,9 @@ class RRTFrontierExplorer(Node):
             return 2
         print("RRT_READY", flush=True)
         last_idle_log = 0.0
+        force_replan = True
+        no_frontier_retry_at = 0.0
+        idle_wait_s = max(0.1, float(self.args.replan_sleep_s))
         while rclpy.ok() and time.monotonic() - started < self.args.runtime_s and self.goal_count < self.args.max_goals:
             rclpy.spin_once(self, timeout_sec=0.1)
             if self.risk_detected:
@@ -805,12 +1007,54 @@ class RRTFrontierExplorer(Node):
                         flush=True,
                     )
                     last_idle_log = now
-                time.sleep(min(self.args.replan_sleep_s, max(0.1, self.failure_backoff_until - now)))
+                self.spin_wait(
+                    min(self.args.replan_sleep_s, max(0.1, self.failure_backoff_until - now)),
+                    wake_on_map_change=False,
+                )
                 continue
+            if (
+                self.args.event_driven_replan
+                and not force_replan
+                and self.map_generation == self.last_planned_map_generation
+                and now < no_frontier_retry_at
+            ):
+                wake_reason = self.spin_wait(idle_wait_s, wake_on_map_change=True)
+                if wake_reason == "risk_detected":
+                    status = wake_reason
+                    break
+                if wake_reason != "map_changed":
+                    now = time.monotonic()
+                    if now - last_idle_log >= self.args.idle_log_period_s:
+                        print(
+                            "RRT_WAIT",
+                            json.dumps(
+                                {
+                                    "reason": "unchanged_map",
+                                    "goals": self.goal_count,
+                                    "time_s": round(now - started, 2),
+                                    "map_generation": self.map_generation,
+                                    "next_wait_s": round(idle_wait_s, 2),
+                                }
+                            ),
+                            flush=True,
+                        )
+                        last_idle_log = now
+                    idle_wait_s = min(
+                        float(self.args.map_idle_max_wait_s),
+                        max(float(self.args.replan_sleep_s), idle_wait_s * 2.0),
+                    )
+                    continue
             cell, reason = self.choose_frontier_goal()
+            self.planning_cycles += 1
+            self.last_planned_map_generation = self.map_generation
+            force_replan = False
             if cell is None:
                 status = reason
                 now = time.monotonic()
+                no_frontier_retry_at = now + max(
+                    self.args.replan_sleep_s,
+                    self.args.no_frontier_retry_s,
+                )
                 if now - last_idle_log >= self.args.idle_log_period_s:
                     print(
                         "RRT_WAIT",
@@ -824,8 +1068,13 @@ class RRTFrontierExplorer(Node):
                         flush=True,
                     )
                     last_idle_log = now
-                time.sleep(self.args.replan_sleep_s)
+                idle_wait_s = min(
+                    float(self.args.map_idle_max_wait_s),
+                    max(float(self.args.replan_sleep_s), idle_wait_s * 2.0),
+                )
                 continue
+            idle_wait_s = max(0.1, float(self.args.replan_sleep_s))
+            no_frontier_retry_at = 0.0
             goal = self.make_goal(cell)
             self.goal_count += 1
             record = {
@@ -837,9 +1086,14 @@ class RRTFrontierExplorer(Node):
             }
             record.update(self.last_goal_meta)
             print("RRT_GOAL", json.dumps(record), flush=True)
-            self.recent_goal_cells.append(cell)
+            self.recent_goal_cells.append((cell, time.monotonic()))
             nav_status = self.send_goal(goal)
+            force_replan = True
             record["nav_status"] = nav_status
+            if nav_status == "physical_stuck":
+                record["physical_stuck_escape"] = self.publish_physical_stuck_escape(
+                    self.physical_stuck_kind
+                )
             self.records.append(record)
             print("RRT_RESULT", json.dumps(record), flush=True)
             if nav_status == "risk_detected":
@@ -847,7 +1101,7 @@ class RRTFrontierExplorer(Node):
                 break
             if nav_status not in ("status_4", "published_only"):
                 self.consecutive_failures += 1
-                self.rejected_cells.append(cell)
+                self.rejected_cells.append((cell, time.monotonic()))
                 if self.args.rejected_goal_memory > 0:
                     self.rejected_cells = self.rejected_cells[-self.args.rejected_goal_memory :]
                 if (
@@ -878,6 +1132,12 @@ class RRTFrontierExplorer(Node):
             "runtime_s": round(time.monotonic() - started, 2),
             "records": self.records,
             "published_cmd_vel": False,
+            "planning_metrics": {
+                "planning_cycles": self.planning_cycles,
+                "map_generation": self.map_generation,
+                "identical_map_updates_skipped": self.identical_map_updates,
+                "event_driven_replan": self.args.event_driven_replan,
+            },
         }
         if self.args.report:
             path = Path(self.args.report)
@@ -922,14 +1182,24 @@ def parse_args():
     parser.add_argument("--goal-progress-timeout-s", type=float, default=12.0)
     parser.add_argument("--goal-progress-grace-s", type=float, default=5.0)
     parser.add_argument("--goal-progress-epsilon-m", type=float, default=0.03)
+    parser.add_argument("--goal-progress-yaw-epsilon-deg", type=float, default=5.0)
     parser.add_argument("--failure-backoff-after", type=int, default=8)
     parser.add_argument("--failure-backoff-s", type=float, default=5.0)
     parser.add_argument("--idle-log-period-s", type=float, default=5.0)
     parser.add_argument("--replan-sleep-s", type=float, default=1.0)
+    parser.add_argument("--map-idle-max-wait-s", type=float, default=10.0)
+    parser.add_argument("--no-frontier-retry-s", type=float, default=10.0)
+    parser.add_argument(
+        "--event-driven-replan",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--yaw-step-deg", type=float, default=30.0)
     parser.add_argument("--goal-separation-m", type=float, default=0.45)
     parser.add_argument("--recent-goal-memory", type=int, default=24)
+    parser.add_argument("--recent-goal-cooldown-s", type=float, default=30.0)
     parser.add_argument("--rejected-goal-memory", type=int, default=80)
+    parser.add_argument("--rejected-goal-cooldown-s", type=float, default=30.0)
     parser.add_argument("--rejected-goal-separation-m", type=float, default=0.25)
     parser.add_argument("--frontier-standoff-m", type=float, default=0.35)
     parser.add_argument("--frontier-backoffs-m", default="0.10,0.18,0.25,0.35")
@@ -943,6 +1213,21 @@ def parse_args():
     parser.add_argument("--map-edge-margin-m", type=float, default=0.15)
     parser.add_argument("--start-free-search-m", type=float, default=0.35)
     parser.add_argument("--send-nav2-action", action="store_true")
+    parser.add_argument("--physical-stuck-cmd-topic", default="/cmd_vel_guarded")
+    parser.add_argument("--physical-stuck-odom-topic", default="/odom")
+    parser.add_argument("--physical-stuck-cmd-linear-mps", type=float, default=0.10)
+    parser.add_argument("--physical-stuck-cmd-angular-radps", type=float, default=0.20)
+    parser.add_argument("--physical-stuck-odom-linear-mps", type=float, default=0.02)
+    parser.add_argument("--physical-stuck-odom-angular-radps", type=float, default=0.05)
+    parser.add_argument("--physical-stuck-s", type=float, default=2.0)
+    parser.add_argument("--physical-stuck-cmd-timeout-s", type=float, default=0.60)
+    parser.add_argument("--physical-stuck-odom-timeout-s", type=float, default=0.80)
+    parser.add_argument("--physical-stuck-escape-cmd-topic", default="/cmd_vel_raw")
+    parser.add_argument("--physical-stuck-escape-reverse-mps", type=float, default=0.14)
+    parser.add_argument("--physical-stuck-escape-angular-radps", type=float, default=0.35)
+    parser.add_argument("--physical-stuck-escape-reverse-s", type=float, default=0.80)
+    parser.add_argument("--physical-stuck-escape-turn-s", type=float, default=0.80)
+    parser.add_argument("--physical-stuck-escape-rate-hz", type=float, default=20.0)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--report", default="")
     return parser.parse_args()
