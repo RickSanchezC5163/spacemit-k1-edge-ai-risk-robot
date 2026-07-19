@@ -153,6 +153,80 @@ python3 tools/visualize_k1_map_rrt_risk_overlay.py \
 
 当前隧道 / 窄通道问题主要来自规则层保守叠加：RRT 目标 clearance、Nav2 footprint/inflation 和 safety guard 的 corridor stuck/spin escape 同时限制了进入窄通道的意愿。下一步建议加入明确的 `corridor_mode`：左右近但前方仍有连续空间时，低速居中前进；只有前方稳定堵住且 odom 无进展时，才触发 180 度掉头。
 
+### K1 实机进程控制
+
+完整链路建议按“清理残留 -> 启动 SLAM/Nav2 -> 启动 YOLO/approach -> 启动 RRT”的顺序执行。所有命令均在 K1 端运行：
+
+```bash
+ssh soc@192.168.43.40
+cd /home/soc/edge-ai-robot-k1
+
+# 1. 清理旧 SLAM/Nav2/RRT/YOLO/D435/guard 进程
+bash tools/start_real_k1_rrt_nav2_mapping.sh clean
+
+# 2. 启动 SLAM + Nav2 + safety guard
+bash tools/start_real_k1_rrt_nav2_mapping.sh nav2-slam
+```
+
+另开窗口确认 Nav2 active 后，再启动风险识别和靠近链路：
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
+
+# 启动 D435 + SpaceMIT EP YOLO + risk approach 状态机
+bash tools/start_real_k1_rrt_nav2_mapping.sh risk-approach "$RUN"
+
+# 启动无限 RRT/Nav2 自由探图
+bash tools/start_real_k1_rrt_nav2_mapping.sh rrt-run-2m-unlimited "$RUN"
+```
+
+常用监视命令：
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
+
+tail -f "$RUN/rrt_unlimited.log"
+tail -f "$RUN/yolo_risk_headless.log"
+tail -f "$RUN/risk_approach.log"
+tail -f "$RUN/risk_approach/risk_approach_records.jsonl"
+watch -n 0.5 "cat $RUN/yolo_risk/alarm_state.json"
+
+ps -eo pid,pcpu,pmem,args | grep -E 'slam_toolbox|nav2_|sim_rrt|run_prelim|risk_approach|realsense|scan_safety' | grep -v grep
+```
+
+停止、零速和保存地图：
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
+
+# 只停 RRT，保留 SLAM/Nav2/YOLO
+pkill -INT -f 'sim_rrt_frontier_explorer.py' || true
+
+# 全链路零速
+bash tools/start_real_k1_rrt_nav2_mapping.sh zero
+
+# 保存当前 /map
+bash tools/start_real_k1_rrt_nav2_mapping.sh save-map "$RUN"
+
+# 完整收车
+bash tools/start_real_k1_rrt_nav2_mapping.sh clean
+```
+
+如果 `map_saver_cli` 出现 FastDDS SHM port lock，可以临时使用 UDPv4 保存地图：
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+source /opt/ros/humble/setup.bash
+source ros2_ws/install/setup.bash
+RUN=$(cat .current_real_k1_rrt_nav2_run_dir)
+mkdir -p "$RUN/maps"
+FASTDDS_BUILTIN_TRANSPORTS=UDPv4 ros2 run nav2_map_server map_saver_cli \
+  -f "$RUN/maps/map_$(date +%Y%m%d_%H%M%S)"
+```
+
 ## 更新记录
 
 - **2026-07-19**：打通 K1 实机自由探图、SpaceMIT EP YOLO 风险候选记录、blockage 靠近和近距离确认预留；修正风险点坐标系，区分 `map_point_xy_m` 与 `odom≈` 候选；新增自适应横平竖直地图 + RRT + 风险点可视化工具。
