@@ -110,6 +110,15 @@ def resolve_model_input_size(model_path: Path, fallback_imgsz: int) -> Tuple[int
                 return int(shape[2].dim_value), int(shape[3].dim_value)
         except Exception:
             pass
+        try:
+            import onnxruntime as ort
+
+            session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+            shape = session.get_inputs()[0].shape
+            if len(shape) >= 4 and isinstance(shape[2], int) and isinstance(shape[3], int):
+                return int(shape[2]), int(shape[3])
+        except Exception:
+            pass
     return int(fallback_imgsz), int(fallback_imgsz)
 
 

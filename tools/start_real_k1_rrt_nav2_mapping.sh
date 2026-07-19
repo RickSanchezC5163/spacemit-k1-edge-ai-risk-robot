@@ -58,6 +58,7 @@ Commands:
                   2m x 2m long-running guarded RRT/Nav2 mapping run without YOLO.
   d435            Start RealSense D435 ROS driver for RGB-D topics.
   yolo-ep         Start D435 YOLO risk bridge with SpaceMIT EP, no arm action.
+  risk-approach   Start headless D435 YOLO risk detection and event-driven Nav2 approach.
   voice           Start SYN6288 serial voice bridge.
   ui              Serve current run directory on port 8765.
   save-map        Save /map into run_dir/maps.
@@ -78,6 +79,7 @@ case "${COMMAND}" in
   clean)
     pkill -INT -f 'sim_rrt_frontier_explorer.py' 2>/dev/null || true
     pkill -INT -f 'run_prelim_remote_mapping_yolo_arm_demo.py' 2>/dev/null || true
+    pkill -INT -f 'run_real_k1_risk_approach_from_event.py' 2>/dev/null || true
     pkill -f 'teleop_twist_keyboard' 2>/dev/null || true
     pkill -f 'http.server 8765' 2>/dev/null || true
     pkill -f 'tank_base_safe.launch.py' 2>/dev/null || true
@@ -93,6 +95,7 @@ case "${COMMAND}" in
     sleep 2
     pkill -f 'sim_rrt_frontier_explorer.py' 2>/dev/null || true
     pkill -f 'run_prelim_remote_mapping_yolo_arm_demo.py' 2>/dev/null || true
+    pkill -f 'run_real_k1_risk_approach_from_event.py' 2>/dev/null || true
     echo "[real-k1] cleaned"
     ;;
 
@@ -112,26 +115,45 @@ case "${COMMAND}" in
     source_ros
     ensure_run_dir
     exec ros2 launch turn_on_wheeltec_robot n10p_tank_mapping_safety_guard.launch.py \
-      front_collision_corridor_half_width_m:="${FRONT_COLLISION_CORRIDOR_HALF_WIDTH_M:-0.26}" \
-      front_collision_min_x_m:="${FRONT_COLLISION_MIN_X_M:-0.02}" \
+      front_collision_corridor_half_width_m:="${FRONT_COLLISION_CORRIDOR_HALF_WIDTH_M:-0.20}" \
+      front_collision_min_x_m:="${FRONT_COLLISION_MIN_X_M:-0.12}" \
       micro_adjust_sector_deg:="${MICRO_ADJUST_SECTOR_DEG:-45.0}" \
-      micro_adjust_trigger_m:="${MICRO_ADJUST_TRIGGER_M:-0.22}" \
-      micro_adjust_clear_m:="${MICRO_ADJUST_CLEAR_M:-0.30}" \
+      micro_adjust_trigger_m:="${MICRO_ADJUST_TRIGGER_M:-0.16}" \
+      micro_adjust_clear_m:="${MICRO_ADJUST_CLEAR_M:-0.22}" \
       micro_adjust_direction_deadband_m:="${MICRO_ADJUST_DIRECTION_DEADBAND_M:-0.03}" \
       micro_adjust_direction_latch_s:="${MICRO_ADJUST_DIRECTION_LATCH_S:-1.50}" \
+      enable_spin_escape:="${ENABLE_SPIN_ESCAPE:-true}" \
+      spin_escape_turn_changes:="${SPIN_ESCAPE_TURN_CHANGES:-3}" \
+      spin_escape_degrees:="${SPIN_ESCAPE_DEGREES:-180.0}" \
+      spin_escape_angular_z:="${SPIN_ESCAPE_ANGULAR_Z:-0.35}" \
+      spin_escape_cooldown_s:="${SPIN_ESCAPE_COOLDOWN_S:-3.0}" \
+      enable_micro_adjust_stuck_spin_escape:="${ENABLE_MICRO_ADJUST_STUCK_SPIN_ESCAPE:-true}" \
+      micro_adjust_stuck_spin_min_s:="${MICRO_ADJUST_STUCK_SPIN_MIN_S:-6.0}" \
+      micro_adjust_stuck_spin_front_blocked_m:="${MICRO_ADJUST_STUCK_SPIN_FRONT_BLOCKED_M:-0.30}" \
+      micro_adjust_stuck_spin_clear_m:="${MICRO_ADJUST_STUCK_SPIN_CLEAR_M:-0.40}" \
+      micro_adjust_stuck_spin_cmd_angular_mps:="${MICRO_ADJUST_STUCK_SPIN_CMD_ANGULAR_MPS:-0.05}" \
+      enable_corridor_stuck_spin_escape:="${ENABLE_CORRIDOR_STUCK_SPIN_ESCAPE:-true}" \
+      corridor_stuck_spin_trigger_m:="${CORRIDOR_STUCK_SPIN_TRIGGER_M:-0.18}" \
+      corridor_stuck_spin_clear_m:="${CORRIDOR_STUCK_SPIN_CLEAR_M:-0.24}" \
+      corridor_stuck_spin_min_s:="${CORRIDOR_STUCK_SPIN_MIN_S:-3.0}" \
+      corridor_stuck_spin_cmd_angular_mps:="${CORRIDOR_STUCK_SPIN_CMD_ANGULAR_MPS:-0.06}" \
+      corridor_stuck_spin_front_blocked_m:="${CORRIDOR_STUCK_SPIN_FRONT_BLOCKED_M:-0.30}" \
+      corridor_stuck_spin_front_sector_deg:="${CORRIDOR_STUCK_SPIN_FRONT_SECTOR_DEG:-20.0}" \
+      corridor_stuck_spin_require_sides:="${CORRIDOR_STUCK_SPIN_REQUIRE_SIDES:-true}" \
+      corridor_stuck_spin_side_blocked_m:="${CORRIDOR_STUCK_SPIN_SIDE_BLOCKED_M:-0.32}" \
       enable_escape_reverse:="${ENABLE_ESCAPE_REVERSE:-true}" \
-      escape_reverse_trigger_m:="${ESCAPE_REVERSE_TRIGGER_M:-0.16}" \
-      escape_reverse_clear_m:="${ESCAPE_REVERSE_CLEAR_M:-0.24}" \
+      escape_reverse_trigger_m:="${ESCAPE_REVERSE_TRIGGER_M:-0.12}" \
+      escape_reverse_clear_m:="${ESCAPE_REVERSE_CLEAR_M:-0.18}" \
       escape_reverse_linear_x:="${ESCAPE_REVERSE_LINEAR_X:--0.08}" \
       escape_reverse_angular_z:="${ESCAPE_REVERSE_ANGULAR_Z:-0.20}" \
       escape_reverse_max_s:="${ESCAPE_REVERSE_MAX_S:-0.80}" \
       escape_reverse_cooldown_s:="${ESCAPE_REVERSE_COOLDOWN_S:-0.40}" \
-      hard_stop_m:=0.10 \
-      emergency_stop_m:=0.10 \
-      slow_down_m:=0.30 \
-      approach_stop_m:=0.20 \
+      hard_stop_m:="${HARD_STOP_M:-0.10}" \
+      emergency_stop_m:="${EMERGENCY_STOP_M:-0.10}" \
+      slow_down_m:="${SLOW_DOWN_M:-0.30}" \
+      approach_stop_m:="${APPROACH_STOP_M:-0.20}" \
       min_effective_forward:=0.05 \
-      clear_max_linear:=0.30 \
+      clear_max_linear:="${CLEAR_MAX_LINEAR:-0.24}" \
       soft_max_linear:=0.10
     ;;
 
@@ -145,26 +167,45 @@ case "${COMMAND}" in
     source_ros
     ensure_run_dir
     exec ros2 launch turn_on_wheeltec_robot n10p_tank_nav2_slam.launch.py \
-      front_collision_corridor_half_width_m:="${FRONT_COLLISION_CORRIDOR_HALF_WIDTH_M:-0.26}" \
-      front_collision_min_x_m:="${FRONT_COLLISION_MIN_X_M:-0.02}" \
+      front_collision_corridor_half_width_m:="${FRONT_COLLISION_CORRIDOR_HALF_WIDTH_M:-0.20}" \
+      front_collision_min_x_m:="${FRONT_COLLISION_MIN_X_M:-0.12}" \
       micro_adjust_sector_deg:="${MICRO_ADJUST_SECTOR_DEG:-45.0}" \
-      micro_adjust_trigger_m:="${MICRO_ADJUST_TRIGGER_M:-0.22}" \
-      micro_adjust_clear_m:="${MICRO_ADJUST_CLEAR_M:-0.30}" \
+      micro_adjust_trigger_m:="${MICRO_ADJUST_TRIGGER_M:-0.16}" \
+      micro_adjust_clear_m:="${MICRO_ADJUST_CLEAR_M:-0.22}" \
       micro_adjust_direction_deadband_m:="${MICRO_ADJUST_DIRECTION_DEADBAND_M:-0.03}" \
       micro_adjust_direction_latch_s:="${MICRO_ADJUST_DIRECTION_LATCH_S:-1.50}" \
+      enable_spin_escape:="${ENABLE_SPIN_ESCAPE:-true}" \
+      spin_escape_turn_changes:="${SPIN_ESCAPE_TURN_CHANGES:-3}" \
+      spin_escape_degrees:="${SPIN_ESCAPE_DEGREES:-180.0}" \
+      spin_escape_angular_z:="${SPIN_ESCAPE_ANGULAR_Z:-0.35}" \
+      spin_escape_cooldown_s:="${SPIN_ESCAPE_COOLDOWN_S:-3.0}" \
+      enable_micro_adjust_stuck_spin_escape:="${ENABLE_MICRO_ADJUST_STUCK_SPIN_ESCAPE:-true}" \
+      micro_adjust_stuck_spin_min_s:="${MICRO_ADJUST_STUCK_SPIN_MIN_S:-6.0}" \
+      micro_adjust_stuck_spin_front_blocked_m:="${MICRO_ADJUST_STUCK_SPIN_FRONT_BLOCKED_M:-0.30}" \
+      micro_adjust_stuck_spin_clear_m:="${MICRO_ADJUST_STUCK_SPIN_CLEAR_M:-0.40}" \
+      micro_adjust_stuck_spin_cmd_angular_mps:="${MICRO_ADJUST_STUCK_SPIN_CMD_ANGULAR_MPS:-0.05}" \
+      enable_corridor_stuck_spin_escape:="${ENABLE_CORRIDOR_STUCK_SPIN_ESCAPE:-true}" \
+      corridor_stuck_spin_trigger_m:="${CORRIDOR_STUCK_SPIN_TRIGGER_M:-0.18}" \
+      corridor_stuck_spin_clear_m:="${CORRIDOR_STUCK_SPIN_CLEAR_M:-0.24}" \
+      corridor_stuck_spin_min_s:="${CORRIDOR_STUCK_SPIN_MIN_S:-3.0}" \
+      corridor_stuck_spin_cmd_angular_mps:="${CORRIDOR_STUCK_SPIN_CMD_ANGULAR_MPS:-0.06}" \
+      corridor_stuck_spin_front_blocked_m:="${CORRIDOR_STUCK_SPIN_FRONT_BLOCKED_M:-0.30}" \
+      corridor_stuck_spin_front_sector_deg:="${CORRIDOR_STUCK_SPIN_FRONT_SECTOR_DEG:-20.0}" \
+      corridor_stuck_spin_require_sides:="${CORRIDOR_STUCK_SPIN_REQUIRE_SIDES:-true}" \
+      corridor_stuck_spin_side_blocked_m:="${CORRIDOR_STUCK_SPIN_SIDE_BLOCKED_M:-0.32}" \
       enable_escape_reverse:="${ENABLE_ESCAPE_REVERSE:-true}" \
-      escape_reverse_trigger_m:="${ESCAPE_REVERSE_TRIGGER_M:-0.16}" \
-      escape_reverse_clear_m:="${ESCAPE_REVERSE_CLEAR_M:-0.24}" \
+      escape_reverse_trigger_m:="${ESCAPE_REVERSE_TRIGGER_M:-0.12}" \
+      escape_reverse_clear_m:="${ESCAPE_REVERSE_CLEAR_M:-0.18}" \
       escape_reverse_linear_x:="${ESCAPE_REVERSE_LINEAR_X:--0.08}" \
       escape_reverse_angular_z:="${ESCAPE_REVERSE_ANGULAR_Z:-0.20}" \
       escape_reverse_max_s:="${ESCAPE_REVERSE_MAX_S:-0.80}" \
       escape_reverse_cooldown_s:="${ESCAPE_REVERSE_COOLDOWN_S:-0.40}" \
-      hard_stop_m:=0.10 \
-      emergency_stop_m:=0.10 \
-      slow_down_m:=0.30 \
-      approach_stop_m:=0.20 \
+      hard_stop_m:="${HARD_STOP_M:-0.10}" \
+      emergency_stop_m:="${EMERGENCY_STOP_M:-0.10}" \
+      slow_down_m:="${SLOW_DOWN_M:-0.30}" \
+      approach_stop_m:="${APPROACH_STOP_M:-0.20}" \
       min_effective_forward:=0.05 \
-      clear_max_linear:=0.30 \
+      clear_max_linear:="${CLEAR_MAX_LINEAR:-0.24}" \
       soft_max_linear:=0.10
     ;;
 
@@ -186,6 +227,10 @@ case "${COMMAND}" in
       --runtime-s "${RRT_RUNTIME_S:-180}" \
       --max-goals "${RRT_MAX_GOALS:-10}" \
       --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-2.5}" \
+      --adaptive-sample-radius \
+      --adaptive-tight-sample-radius-m "${RRT_ADAPTIVE_TIGHT_SAMPLE_RADIUS_M:-0.60}" \
+      --adaptive-wide-sample-radius-m "${RRT_ADAPTIVE_WIDE_SAMPLE_RADIUS_M:-1.00}" \
+      --adaptive-wide-clearance-m "${RRT_ADAPTIVE_WIDE_CLEARANCE_M:-0.55}" \
       --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.45}" \
       --inflation-m "${RRT_INFLATION_M:-0.25}" \
       --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.35}" \
@@ -196,8 +241,13 @@ case "${COMMAND}" in
       --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
       --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
       --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
-      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
-      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
+      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-0.25}" \
+      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-1.0}" \
+      --frontier-unknown-weight "${RRT_FRONTIER_UNKNOWN_WEIGHT:-0.35}" \
+      --frontier-unknown-gain-radius-m "${RRT_FRONTIER_UNKNOWN_GAIN_RADIUS_M:-0.35}" \
+      --free-roam-unknown-weight "${RRT_FREE_ROAM_UNKNOWN_WEIGHT:-0.30}" \
+      --free-roam-distance-weight "${RRT_FREE_ROAM_DISTANCE_WEIGHT:-0.20}" \
+      --free-roam-unknown-gain-radius-m "${RRT_FREE_ROAM_UNKNOWN_GAIN_RADIUS_M:-0.40}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-35}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
       --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
@@ -221,6 +271,10 @@ case "${COMMAND}" in
       --runtime-s "${RRT_RUNTIME_S:-180}" \
       --max-goals "${RRT_MAX_GOALS:-10}" \
       --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-2.5}" \
+      --adaptive-sample-radius \
+      --adaptive-tight-sample-radius-m "${RRT_ADAPTIVE_TIGHT_SAMPLE_RADIUS_M:-0.60}" \
+      --adaptive-wide-sample-radius-m "${RRT_ADAPTIVE_WIDE_SAMPLE_RADIUS_M:-1.00}" \
+      --adaptive-wide-clearance-m "${RRT_ADAPTIVE_WIDE_CLEARANCE_M:-0.55}" \
       --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.45}" \
       --inflation-m "${RRT_INFLATION_M:-0.25}" \
       --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.35}" \
@@ -231,8 +285,13 @@ case "${COMMAND}" in
       --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
       --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
       --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
-      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
-      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
+      --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-0.25}" \
+      --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-1.0}" \
+      --frontier-unknown-weight "${RRT_FRONTIER_UNKNOWN_WEIGHT:-0.35}" \
+      --frontier-unknown-gain-radius-m "${RRT_FRONTIER_UNKNOWN_GAIN_RADIUS_M:-0.35}" \
+      --free-roam-unknown-weight "${RRT_FREE_ROAM_UNKNOWN_WEIGHT:-0.30}" \
+      --free-roam-distance-weight "${RRT_FREE_ROAM_DISTANCE_WEIGHT:-0.20}" \
+      --free-roam-unknown-gain-radius-m "${RRT_FREE_ROAM_UNKNOWN_GAIN_RADIUS_M:-0.40}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-35}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
       --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
@@ -240,6 +299,7 @@ case "${COMMAND}" in
       --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
       --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
       --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
+      --replan-sleep-s "${RRT_REPLAN_SLEEP_S:-2.5}" \
       --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
       --send-nav2-action \
       --report "${RUN_DIR}/rrt_frontier_nav2_report.json"
@@ -256,14 +316,19 @@ case "${COMMAND}" in
       --base-frame base_footprint \
       --runtime-s "${RRT_RUNTIME_S:-120}" \
       --max-goals "${RRT_MAX_GOALS:-6}" \
-      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.00}" \
-      --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.20}" \
+      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-sample-radius \
+      --adaptive-tight-sample-radius-m "${RRT_ADAPTIVE_TIGHT_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-wide-sample-radius-m "${RRT_ADAPTIVE_WIDE_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-wide-clearance-m "${RRT_ADAPTIVE_WIDE_CLEARANCE_M:-0.15}" \
+      --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.30}" \
       --inflation-m "${RRT_INFLATION_M:-0.12}" \
       --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.10}" \
       --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
-      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.45}" \
+      --min-goal-clearance-m "${RRT_MIN_GOAL_CLEARANCE_M:-0.24}" \
       --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.12}" \
-      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.15}" \
+      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.10}" \
       --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
       --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
       --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
@@ -271,6 +336,11 @@ case "${COMMAND}" in
       --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
       --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
       --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
+      --frontier-unknown-weight "${RRT_FRONTIER_UNKNOWN_WEIGHT:-0.0}" \
+      --frontier-unknown-gain-radius-m "${RRT_FRONTIER_UNKNOWN_GAIN_RADIUS_M:-0.35}" \
+      --free-roam-unknown-weight "${RRT_FREE_ROAM_UNKNOWN_WEIGHT:-0.0}" \
+      --free-roam-distance-weight "${RRT_FREE_ROAM_DISTANCE_WEIGHT:-0.20}" \
+      --free-roam-unknown-gain-radius-m "${RRT_FREE_ROAM_UNKNOWN_GAIN_RADIUS_M:-0.40}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-25}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
       --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
@@ -278,7 +348,7 @@ case "${COMMAND}" in
       --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
       --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
       --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
-      --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
+      --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.45}" \
       --report "${RUN_DIR}/rrt_frontier_preview_2m_report.json"
     ;;
 
@@ -293,14 +363,19 @@ case "${COMMAND}" in
       --base-frame base_footprint \
       --runtime-s "${RRT_RUNTIME_S:-120}" \
       --max-goals "${RRT_MAX_GOALS:-4}" \
-      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.00}" \
-      --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.20}" \
+      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-sample-radius \
+      --adaptive-tight-sample-radius-m "${RRT_ADAPTIVE_TIGHT_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-wide-sample-radius-m "${RRT_ADAPTIVE_WIDE_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-wide-clearance-m "${RRT_ADAPTIVE_WIDE_CLEARANCE_M:-0.15}" \
+      --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.30}" \
       --inflation-m "${RRT_INFLATION_M:-0.12}" \
       --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.10}" \
       --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
-      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.45}" \
+      --min-goal-clearance-m "${RRT_MIN_GOAL_CLEARANCE_M:-0.24}" \
       --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.12}" \
-      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.15}" \
+      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.10}" \
       --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
       --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
       --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
@@ -308,6 +383,11 @@ case "${COMMAND}" in
       --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
       --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
       --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
+      --frontier-unknown-weight "${RRT_FRONTIER_UNKNOWN_WEIGHT:-0.0}" \
+      --frontier-unknown-gain-radius-m "${RRT_FRONTIER_UNKNOWN_GAIN_RADIUS_M:-0.35}" \
+      --free-roam-unknown-weight "${RRT_FREE_ROAM_UNKNOWN_WEIGHT:-0.0}" \
+      --free-roam-distance-weight "${RRT_FREE_ROAM_DISTANCE_WEIGHT:-0.20}" \
+      --free-roam-unknown-gain-radius-m "${RRT_FREE_ROAM_UNKNOWN_GAIN_RADIUS_M:-0.40}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-25}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
       --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
@@ -315,7 +395,8 @@ case "${COMMAND}" in
       --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
       --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
       --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
-      --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
+      --replan-sleep-s "${RRT_REPLAN_SLEEP_S:-2.5}" \
+      --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.45}" \
       --send-nav2-action \
       --report "${RUN_DIR}/rrt_frontier_nav2_2m_report.json"
     ;;
@@ -331,25 +412,35 @@ case "${COMMAND}" in
       --base-frame base_footprint \
       --runtime-s "${RRT_RUNTIME_S:-86400}" \
       --max-goals "${RRT_MAX_GOALS:-1000000}" \
-      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-1.00}" \
-      --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.20}" \
+      --sample-radius-m "${RRT_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-sample-radius \
+      --adaptive-tight-sample-radius-m "${RRT_ADAPTIVE_TIGHT_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-wide-sample-radius-m "${RRT_ADAPTIVE_WIDE_SAMPLE_RADIUS_M:-0.50}" \
+      --adaptive-wide-clearance-m "${RRT_ADAPTIVE_WIDE_CLEARANCE_M:-0.15}" \
+      --min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.30}" \
       --inflation-m "${RRT_INFLATION_M:-0.12}" \
       --frontier-standoff-m "${RRT_FRONTIER_STANDOFF_M:-0.10}" \
       --frontier-backoffs-m "${RRT_FRONTIER_BACKOFFS_M:-0.10,0.18,0.25,0.35}" \
-      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.50}" \
+      --goal-clearance-check-m "${RRT_GOAL_CLEARANCE_CHECK_M:-0.45}" \
+      --min-goal-clearance-m "${RRT_MIN_GOAL_CLEARANCE_M:-0.24}" \
       --goal-separation-m "${RRT_GOAL_SEPARATION_M:-0.12}" \
       --recent-goal-memory "${RRT_RECENT_GOAL_MEMORY:-8}" \
       --rejected-goal-memory "${RRT_REJECTED_GOAL_MEMORY:-60}" \
       --rejected-goal-separation-m "${RRT_REJECTED_GOAL_SEPARATION_M:-0.25}" \
       --free-roam-when-no-frontier \
-      --free-roam-min-distance-m "${RRT_FREE_ROAM_MIN_DISTANCE_M:-0.20}" \
-      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.15}" \
+      --free-roam-min-distance-m "${RRT_FREE_ROAM_MIN_DISTANCE_M:-0.15}" \
+      --map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.10}" \
       --frontier-mode "${RRT_FRONTIER_MODE:-hybrid}" \
       --wfd-max-cells "${RRT_WFD_MAX_CELLS:-12000}" \
       --min-frontier-cluster-cells "${RRT_MIN_FRONTIER_CLUSTER_CELLS:-2}" \
       --frontier-cluster-candidate-limit "${RRT_FRONTIER_CLUSTER_CANDIDATE_LIMIT:-8}" \
       --frontier-distance-weight "${RRT_FRONTIER_DISTANCE_WEIGHT:-1.0}" \
       --frontier-size-weight "${RRT_FRONTIER_SIZE_WEIGHT:-0.05}" \
+      --frontier-unknown-weight "${RRT_FRONTIER_UNKNOWN_WEIGHT:-0.0}" \
+      --frontier-unknown-gain-radius-m "${RRT_FRONTIER_UNKNOWN_GAIN_RADIUS_M:-0.35}" \
+      --free-roam-unknown-weight "${RRT_FREE_ROAM_UNKNOWN_WEIGHT:-0.0}" \
+      --free-roam-distance-weight "${RRT_FREE_ROAM_DISTANCE_WEIGHT:-0.20}" \
+      --free-roam-unknown-gain-radius-m "${RRT_FREE_ROAM_UNKNOWN_GAIN_RADIUS_M:-0.40}" \
       --goal-result-timeout-s "${RRT_GOAL_TIMEOUT_S:-25}" \
       --goal-send-timeout-s "${RRT_GOAL_SEND_TIMEOUT_S:-8}" \
       --goal-progress-timeout-s "${RRT_GOAL_PROGRESS_TIMEOUT_S:-12}" \
@@ -357,7 +448,8 @@ case "${COMMAND}" in
       --goal-progress-epsilon-m "${RRT_GOAL_PROGRESS_EPSILON_M:-0.03}" \
       --failure-backoff-after "${RRT_FAILURE_BACKOFF_AFTER:-8}" \
       --failure-backoff-s "${RRT_FAILURE_BACKOFF_S:-5}" \
-      --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.35}" \
+      --replan-sleep-s "${RRT_REPLAN_SLEEP_S:-2.5}" \
+      --start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.45}" \
       --send-nav2-action \
       --report "${RUN_DIR}/rrt_frontier_nav2_2m_unlimited_report.json"
     ;;
@@ -385,13 +477,123 @@ case "${COMMAND}" in
       --conf "${YOLO_CONF:-0.15}" \
       --iou "${YOLO_IOU:-0.45}" \
       --max-det "${YOLO_MAX_DET:-10}" \
+      --passive-close-confirm-distance-m "${RISK_PASSIVE_CLOSE_CONFIRM_DISTANCE_M:-0.40}" \
       --min-depth-m "${YOLO_MIN_DEPTH_M:-0.20}" \
       --max-depth-m "${YOLO_MAX_DEPTH_M:-1.20}" \
+      --map-frame "${RISK_MAP_FRAME:-map}" \
+      --odom-frame "${RISK_ODOM_FRAME:-odom}" \
+      --tf-lookup-timeout-s "${RISK_TF_LOOKUP_TIMEOUT_S:-0.05}" \
       --alarm-topic /perception/risk_alarm \
-      --auto-risk-gates "${AUTO_RISK_GATES:-crack:0.29:0.60:0.80,blockage:0.23:0.35:0.75}" \
+      --auto-risk-gates "${AUTO_RISK_GATES:-crack:0.60:0.20:1.20,corrosion:0.60:0.20:1.20,leakage:0.60:0.20:1.20,blockage:0.60:0.20:1.20}" \
+      --approach-risk-gates "${APPROACH_RISK_GATES:-crack:0.15:0.20:1.20,corrosion:0.15:0.20:1.20,leakage:0.15:0.20:1.20,blockage:0.15:0.20:1.20}" \
       --dedup-map-grid-m "${RISK_DEDUP_MAP_GRID_M:-0.20}" \
       --arm-response-mode disabled \
+      --map-write-policy "${RISK_MAP_WRITE_POLICY:-approach_confirmed}" \
       --output-dir "${RUN_DIR}/yolo_risk"
+    ;;
+
+  risk-approach)
+    source_ros
+    ensure_run_dir
+    pkill -INT -f 'run_prelim_remote_mapping_yolo_arm_demo.py' 2>/dev/null || true
+    pkill -INT -f 'run_real_k1_risk_approach_from_event.py' 2>/dev/null || true
+    pkill -INT -f 'realsense2_camera.*rs_launch.py' 2>/dev/null || true
+    pkill -INT -f 'realsense2_camera_node' 2>/dev/null || true
+    sleep 3
+    pkill -f 'run_prelim_remote_mapping_yolo_arm_demo.py' 2>/dev/null || true
+    pkill -f 'run_real_k1_risk_approach_from_event.py' 2>/dev/null || true
+    pkill -f 'realsense2_camera.*rs_launch.py' 2>/dev/null || true
+    pkill -f 'realsense2_camera_node' 2>/dev/null || true
+
+    echo "[risk-approach] starting D435 ROS at 640x480x15"
+    nohup ros2 launch realsense2_camera rs_launch.py \
+      depth_module.depth_profile:=640,480,15 \
+      depth_module.infra_profile:=640,480,15 \
+      rgb_camera.color_profile:=640,480,15 \
+      > "${RUN_DIR}/d435_15fps.log" 2>&1 < /dev/null &
+    echo "$!" > "${RUN_DIR}/d435_15fps.pid"
+
+    echo "[risk-approach] waiting for D435 topics"
+    sleep "${D435_START_WAIT_S:-8}"
+
+    echo "[risk-approach] starting headless SpaceMIT EP YOLO risk mapper"
+    nohup env PYTHONUNBUFFERED=1 python3 tools/run_prelim_remote_mapping_yolo_arm_demo.py \
+      --provider spacemit \
+      --model "${YOLO_MODEL:-models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx}" \
+      --imgsz "${YOLO_IMGSZ:-640}" \
+      --conf "${YOLO_CONF:-0.15}" \
+      --iou "${YOLO_IOU:-0.45}" \
+      --max-det "${YOLO_MAX_DET:-10}" \
+      --inference-period-s "${YOLO_INFERENCE_PERIOD_S:-1.0}" \
+      --passive-close-confirm-distance-m "${RISK_PASSIVE_CLOSE_CONFIRM_DISTANCE_M:-0.40}" \
+      --opencv-num-threads "${YOLO_OPENCV_NUM_THREADS:-1}" \
+      --ort-intra-op-threads "${YOLO_ORT_INTRA_OP_THREADS:-1}" \
+      --ort-inter-op-threads "${YOLO_ORT_INTER_OP_THREADS:-1}" \
+      --min-depth-m "${YOLO_MIN_DEPTH_M:-0.20}" \
+      --max-depth-m "${YOLO_MAX_DEPTH_M:-1.20}" \
+      --map-frame "${RISK_MAP_FRAME:-map}" \
+      --odom-frame "${RISK_ODOM_FRAME:-odom}" \
+      --tf-lookup-timeout-s "${RISK_TF_LOOKUP_TIMEOUT_S:-0.05}" \
+      --event-topic /perception/mock_event \
+      --demo-event-topic /prelim_demo/risk_event \
+      --alarm-topic /perception/risk_alarm \
+      --auto-risk-gates "${AUTO_RISK_GATES:-crack:0.60:0.20:1.20,corrosion:0.60:0.20:1.20,leakage:0.60:0.20:1.20,blockage:0.60:0.20:1.20}" \
+      --approach-risk-gates "${APPROACH_RISK_GATES:-crack:0.15:0.20:1.20,corrosion:0.15:0.20:1.20,leakage:0.15:0.20:1.20,blockage:0.15:0.20:1.20}" \
+      --dedup-map-grid-m "${RISK_DEDUP_MAP_GRID_M:-0.20}" \
+      --arm-response-mode disabled \
+      --map-write-policy "${RISK_MAP_WRITE_POLICY:-approach_confirmed}" \
+      --no-visuals \
+      --output-dir "${RUN_DIR}/yolo_risk" \
+      > "${RUN_DIR}/yolo_risk_headless.log" 2>&1 < /dev/null &
+    echo "$!" > "${RUN_DIR}/yolo_risk_headless.pid"
+
+    echo "[risk-approach] starting event-driven Nav2 approach"
+    nohup env PYTHONUNBUFFERED=1 python3 tools/run_real_k1_risk_approach_from_event.py \
+      --event-topic /prelim_demo/risk_event \
+      --status-topic /risk/approach_status \
+      --odom-topic /odom \
+      --goal-frame "${RISK_APPROACH_GOAL_FRAME:-odom}" \
+      --stand-off-m "${RISK_APPROACH_STAND_OFF_M:-0.40}" \
+      --final-stand-off-m "${RISK_FINAL_STAND_OFF_M:-0.20}" \
+      --final-creep-cmd-topic "${RISK_FINAL_CREEP_CMD_TOPIC:-/cmd_vel_raw}" \
+      --final-creep-linear-x "${RISK_FINAL_CREEP_LINEAR_X:-0.04}" \
+      --final-creep-max-s "${RISK_FINAL_CREEP_MAX_S:-5.0}" \
+      --already-near-margin-m "${RISK_APPROACH_NEAR_MARGIN_M:-0.03}" \
+      --passive-close-confirm-distance-m "${RISK_PASSIVE_CLOSE_CONFIRM_DISTANCE_M:-0.40}" \
+      --min-confidence "${RISK_APPROACH_MIN_CONFIDENCE:-0.20}" \
+      --confirm-map-confidence "${RISK_CONFIRM_MAP_CONFIDENCE:-0.60}" \
+      --max-events "${RISK_APPROACH_MAX_EVENTS:-1000000}" \
+      --nav2-wait-s "${RISK_APPROACH_NAV2_WAIT_S:-2.0}" \
+      --interrupt-rrt-on-event \
+      --resume-rrt-after-event \
+      --arm-simulation-mode "${RISK_ARM_SIMULATION_MODE:-semantic_only}" \
+      --arm-simulation-s "${RISK_ARM_SIMULATION_S:-1.0}" \
+      --resume-rrt-runtime-s "${RRT_RUNTIME_S:-86400}" \
+      --resume-rrt-max-goals "${RRT_MAX_GOALS:-1000000}" \
+      --resume-rrt-min-goal-clearance-m "${RRT_MIN_GOAL_CLEARANCE_M:-0.24}" \
+      --resume-rrt-map-edge-margin-m "${RRT_MAP_EDGE_MARGIN_M:-0.10}" \
+      --resume-rrt-min-goal-distance-m "${RRT_MIN_GOAL_DISTANCE_M:-0.30}" \
+      --resume-rrt-free-roam-min-distance-m "${RRT_FREE_ROAM_MIN_DISTANCE_M:-0.15}" \
+      --resume-rrt-start-free-search-m "${RRT_START_FREE_SEARCH_M:-0.45}" \
+      --resume-rrt-replan-sleep-s "${RRT_REPLAN_SLEEP_S:-2.5}" \
+      --close-confirm-usb-device "${RISK_CLOSE_USB_DEVICE:-/dev/video26}" \
+      --close-confirm-width "${RISK_CLOSE_USB_WIDTH:-640}" \
+      --close-confirm-height "${RISK_CLOSE_USB_HEIGHT:-480}" \
+      --close-confirm-warmup-frames "${RISK_CLOSE_USB_WARMUP_FRAMES:-3}" \
+      --close-confirm-capture-timeout-s "${RISK_CLOSE_USB_CAPTURE_TIMEOUT_S:-20}" \
+      --close-confirm-infer-timeout-s "${RISK_CLOSE_USB_INFER_TIMEOUT_S:-45}" \
+      --close-confirm-conf "${RISK_CLOSE_USB_CONF:-0.15}" \
+      --close-confirm-model "${RISK_CLOSE_USB_MODEL:-models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx}" \
+      --close-confirm-providers "${RISK_CLOSE_USB_PROVIDERS:-SpaceMITExecutionProvider,CPUExecutionProvider}" \
+      --output-dir "${RUN_DIR}/risk_approach" \
+      > "${RUN_DIR}/risk_approach.log" 2>&1 < /dev/null &
+    echo "$!" > "${RUN_DIR}/risk_approach.pid"
+
+    echo "[risk-approach] started"
+    echo "[risk-approach] logs:"
+    echo "  ${RUN_DIR}/d435_15fps.log"
+    echo "  ${RUN_DIR}/yolo_risk_headless.log"
+    echo "  ${RUN_DIR}/risk_approach.log"
     ;;
 
   voice)

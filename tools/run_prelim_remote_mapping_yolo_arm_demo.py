@@ -26,11 +26,14 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import rclpy
+import rclpy.duration
+import rclpy.time
 from nav_msgs.msg import Odometry
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
+from tf2_ros import Buffer, TransformException, TransformListener
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,10 +67,17 @@ CLASS_TO_EVENT = {
     "crack": ("hard_obstacle", "high", "stop_and_report"),
     "corrosion": ("hard_obstacle", "medium", "stop_and_recheck"),
     "leakage": ("hard_obstacle", "high", "stop_and_report"),
-    "blockage": ("blocked_path", "high", "stop_and_report"),
+    "blockage": ("blocked_path", "high", "approach_then_arm_candidate"),
 }
 
-DEFAULT_AUTO_RISK_GATES_SPEC = "crack:0.29:0.60:0.80,blockage:0.23:0.35:0.75"
+DEFAULT_AUTO_RISK_GATES_SPEC = (
+    "crack:0.60:0.20:1.20,corrosion:0.60:0.20:1.20,"
+    "leakage:0.60:0.20:1.20,blockage:0.60:0.20:1.20"
+)
+DEFAULT_APPROACH_RISK_GATES_SPEC = (
+    "crack:0.15:0.20:1.20,corrosion:0.15:0.20:1.20,"
+    "leakage:0.15:0.20:1.20,blockage:0.15:0.20:1.20"
+)
 
 COLORS = {
     "crack": (40, 40, 255),
@@ -135,6 +145,25 @@ def base_point_to_odom_xy(base_point: Dict[str, float], odom: Dict[str, Any]) ->
     return {
         "x": round(robot_x + base_x * cos_y - base_y * sin_y, 4),
         "y": round(robot_y + base_x * sin_y + base_y * cos_y, 4),
+    }
+
+
+def yaw_from_quat_xyzw(x: float, y: float, z: float, w: float) -> float:
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+def transform_xy_with_tf(x: float, y: float, transform: Any) -> Dict[str, float]:
+    trans = transform.transform.translation
+    rot = transform.transform.rotation
+    yaw = yaw_from_quat_xyzw(float(rot.x), float(rot.y), float(rot.z), float(rot.w))
+    cos_y = math.cos(yaw)
+    sin_y = math.sin(yaw)
+    return {
+        "x": round(float(trans.x) + x * cos_y - y * sin_y, 4),
+        "y": round(float(trans.y) + x * sin_y + y * cos_y, 4),
+        "source_frame": transform.header.frame_id,
+        "target_child_frame": transform.child_frame_id,
+        "tf_yaw_rad": round(yaw, 6),
     }
 
 
@@ -335,10 +364,17 @@ def odom_is_zero(odom: Optional[Dict[str, Any]], linear_eps: float, angular_eps:
 
 
 class RiskEventStore:
-    def __init__(self, output_dir: Path, map_grid_m: float, image_grid_px: int):
+    def __init__(
+        self,
+        output_dir: Path,
+        map_grid_m: float,
+        image_grid_px: int,
+        map_write_policy: str,
+    ):
         self.output_dir = output_dir
         self.map_grid_m = float(map_grid_m)
         self.image_grid_px = max(1, int(image_grid_px))
+        self.map_write_policy = str(map_write_policy)
         self.events_by_key: Dict[str, Dict[str, Any]] = {}
         self.events: List[Dict[str, Any]] = []
         self.map_points: List[Dict[str, Any]] = []
@@ -370,11 +406,19 @@ class RiskEventStore:
             )
             existing["latest_distance_m"] = event.get("distance_m")
             existing["latest_odom_point_xy_m"] = map_point.get("odom_point_xy_m")
+            existing["latest_map_point_xy_m"] = map_point.get("map_point_xy_m")
+            existing["map_projection_status"] = map_point.get("map_projection_status")
+            existing["latest_confidence"] = event.get("confidence")
             return False, existing
 
         self.events_by_key[key] = event
         self.events.append(event)
-        self.map_points.append(map_point)
+        if (
+            self.map_write_policy == "immediate"
+            and map_point.get("candidate_kind") == "formal"
+            and map_point.get("map_point_xy_m")
+        ):
+            self.map_points.append(map_point)
         return True, event
 
     def write_all(self) -> None:
@@ -386,6 +430,7 @@ class RiskEventStore:
                 "dedup": {
                     "map_grid_m": self.map_grid_m,
                     "image_grid_px": self.image_grid_px,
+                    "map_write_policy": self.map_write_policy,
                     "key_count": len(self.events_by_key),
                 },
                 "event_count": len(self.events),
@@ -401,13 +446,15 @@ class RiskEventStore:
                 "axis_mapping": AXIS_MAPPING,
                 "camera_offset_base_m": list(CAMERA_OFFSET_BASE_M),
                 "risk_map_points": self.map_points,
+                "map_write_policy": self.map_write_policy,
                 "summary": {
                     "risk_map_points": len(self.map_points),
-                    "projected": sum(
-                        1 for point in self.map_points if point.get("projection_status") == "projected"
+                    "map_projected": sum(1 for point in self.map_points if point.get("map_point_xy_m")),
+                    "odom_projected": sum(
+                        1 for point in self.map_points if point.get("odom_point_xy_m")
                     ),
                     "missing_projection": sum(
-                        1 for point in self.map_points if point.get("projection_status") != "projected"
+                        1 for point in self.map_points if not point.get("map_point_xy_m")
                     ),
                 },
                 "claim_boundary": [
@@ -425,10 +472,12 @@ class PrelimDemoNode(Node):
         self.output_dir = Path(args.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.auto_risk_gates = parse_auto_risk_gates(args.auto_risk_gates)
+        self.approach_risk_gates = parse_auto_risk_gates(args.approach_risk_gates)
         self.store = RiskEventStore(
             self.output_dir,
             map_grid_m=args.dedup_map_grid_m,
             image_grid_px=args.dedup_image_grid_px,
+            map_write_policy=args.map_write_policy,
         )
         self.errors: List[Dict[str, Any]] = []
         self.arm_candidate_count = 0
@@ -441,6 +490,8 @@ class PrelimDemoNode(Node):
         self.last_infer_time = 0.0
         self.frame_count = 0
         self.inference_count = 0
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         import onnxruntime as ort
 
@@ -503,9 +554,15 @@ class PrelimDemoNode(Node):
                     "demo_event": args.demo_event_topic,
                     "alarm": args.alarm_topic,
                 },
+                "frames": {
+                    "map": args.map_frame,
+                    "odom": args.odom_frame,
+                    "risk_projection": "base_point -> odom_point via /odom, then odom_point -> map_point via TF when available",
+                },
                 "cmd_vel_published_by_this_node": False,
                 "arm_response_mode": args.arm_response_mode,
                 "auto_risk_gates": self.auto_risk_gates,
+                "approach_risk_gates": self.approach_risk_gates,
                 "claim_boundary": self.claim_boundary(),
             },
         )
@@ -559,6 +616,34 @@ class PrelimDemoNode(Node):
         status = self.freshness()
         required = ("rgb", "depth", "camera_info", "odom")
         return all(bool(status[name]["fresh"]) for name in required)
+
+    def odom_point_to_map_xy(self, odom_point: Optional[Dict[str, float]]) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+        if not odom_point:
+            return None, {"status": "missing_odom_point"}
+        if not self.args.map_frame or self.args.map_frame == self.args.odom_frame:
+            return dict(odom_point), {"status": "same_frame", "source_frame": self.args.odom_frame}
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                self.args.map_frame,
+                self.args.odom_frame,
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=float(self.args.tf_lookup_timeout_s)),
+            )
+            mapped = transform_xy_with_tf(float(odom_point["x"]), float(odom_point["y"]), transform)
+            return mapped, {
+                "status": "projected",
+                "source_frame": self.args.odom_frame,
+                "target_frame": self.args.map_frame,
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            return None, {"status": "invalid_odom_point", "error": str(exc)}
+        except TransformException as exc:
+            return None, {
+                "status": "tf_unavailable",
+                "source_frame": self.args.odom_frame,
+                "target_frame": self.args.map_frame,
+                "error": str(exc),
+            }
 
     def _timer_cb(self) -> None:
         now = time.monotonic()
@@ -621,22 +706,27 @@ class PrelimDemoNode(Node):
 
         localized = sorted(localized, key=lambda item: float(item.get("confidence", 0.0)), reverse=True)
         formal_candidates: List[Dict[str, Any]] = []
+        approach_candidates: List[Dict[str, Any]] = []
         for det in localized:
             gate_result = evaluate_auto_risk_gate(det, self.auto_risk_gates)
             det["auto_risk_gate"] = gate_result
+            approach_gate_result = evaluate_auto_risk_gate(det, self.approach_risk_gates)
+            det["approach_risk_gate"] = approach_gate_result
             if gate_result.get("allowed"):
                 formal_candidates.append(det)
+            if approach_gate_result.get("allowed"):
+                approach_candidates.append(det)
 
         if not self.args.no_visuals:
             draw_overlay(frame_bgr, localized[: self.args.max_det], self.output_dir / "latest_overlay.png")
 
         new_events: List[Dict[str, Any]] = []
-        for det in formal_candidates[: self.args.max_events_per_frame]:
+        for det in approach_candidates[: self.args.max_events_per_frame]:
             created = self.handle_detection(det, rgb_arr, depth_raw, depth_m, camera_info, odom, latency_ms, depth_scale_m)
             if created is not None:
                 new_events.append(created)
 
-        latest_alarm = new_events[0] if new_events else None
+        latest_alarm = next((event for event in new_events if event.get("candidate_kind") == "formal"), None)
         if latest_alarm is None and formal_candidates:
             latest_alarm = self.transient_alarm_from_detection(formal_candidates[0])
 
@@ -657,6 +747,10 @@ class PrelimDemoNode(Node):
             "event_type": event_type,
             "risk_level": risk_level,
             "recommended_action": recommended_action,
+            "semantic_mode": "approach_then_confirm",
+            "arm_operation_semantic": (
+                "blockage_response_candidate" if class_name == "blockage" else "none"
+            ),
             "auto_risk_gate": det.get("auto_risk_gate"),
             "confidence": det.get("confidence"),
             "distance_m": det.get("depth_median_m"),
@@ -676,9 +770,12 @@ class PrelimDemoNode(Node):
     ) -> Optional[Dict[str, Any]]:
         class_name = str(det.get("class_name") or det.get("label") or "risk")
         event_type, risk_level, recommended_action = risk_info_for_class(class_name)
+        formal_allowed = bool((det.get("auto_risk_gate") or {}).get("allowed"))
+        candidate_kind = "formal" if formal_allowed else "approach_candidate"
         camera_point = det.get("camera_point_xyz_m")
         base_point = camera_point_to_base_point(camera_point) if isinstance(camera_point, dict) else None
         odom_point = base_point_to_odom_xy(base_point, odom) if base_point and odom else None
+        map_point, map_projection = self.odom_point_to_map_xy(odom_point)
         projection_status = "projected" if odom_point else "missing_pose_or_depth"
         key = self.store.dedup_key(det, odom_point)
         event_id = f"risk_event_{now_id()}"
@@ -696,11 +793,17 @@ class PrelimDemoNode(Node):
             "camera_point_xyz_m": camera_point,
             "base_point_xyz_m": base_point,
             "odom_point_xy_m": odom_point,
+            "map_point_xy_m": map_point,
             "projection_status": projection_status,
+            "map_projection_status": map_projection,
             "projection_mode": "d435_bbox_depth_odom_approx",
+            "map_projection_mode": "tf_map_from_odom" if map_point else "odom_only",
             "axis_mapping": AXIS_MAPPING,
             "robot_odom_pose": (odom or {}).get("pose") if odom else None,
             "auto_risk_gate": det.get("auto_risk_gate"),
+            "approach_risk_gate": det.get("approach_risk_gate"),
+            "candidate_kind": candidate_kind,
+            "requires_close_confirm": True,
         }
         event = {
             "event_id": event_id,
@@ -712,7 +815,15 @@ class PrelimDemoNode(Node):
             "event_type": event_type,
             "risk_level": risk_level,
             "recommended_action": recommended_action,
+            "semantic_mode": "approach_then_confirm",
+            "arm_operation_semantic": (
+                "blockage_response_candidate" if class_name == "blockage" else "none"
+            ),
             "auto_risk_gate": det.get("auto_risk_gate"),
+            "approach_risk_gate": det.get("approach_risk_gate"),
+            "candidate_kind": candidate_kind,
+            "requires_close_confirm": True,
+            "formal_write_confidence": 0.60,
             "confidence": det.get("confidence"),
             "confidence_max": det.get("confidence"),
             "distance_m": distance_m,
@@ -720,10 +831,16 @@ class PrelimDemoNode(Node):
             "projection_status": projection_status,
             "odom_point_xy_m": odom_point,
             "latest_odom_point_xy_m": odom_point,
+            "map_point_xy_m": map_point,
+            "latest_map_point_xy_m": map_point,
+            "map_projection_status": map_projection,
             "manual_arm_response_candidate": None,
         }
         is_new, stored = self.store.register(key, event, map_point)
         if not is_new:
+            passive_event = self.maybe_publish_passive_close_update(stored, event, distance_m)
+            if passive_event is not None:
+                return passive_event
             return None
 
         capture_dir = self.output_dir / "captures" / event_id
@@ -770,19 +887,60 @@ class PrelimDemoNode(Node):
                 "rgb_path": str(rgb_path),
                 "overlay_path": str(overlay_path),
                 "risk_detection_path": str(detection_path),
-                "risk_map_point_path": str(map_point_path),
+                "candidate_map_point_path": str(map_point_path),
             }
         )
+        if self.args.map_write_policy == "immediate":
+            stored["risk_map_point_path"] = str(map_point_path)
         stored["manual_arm_response_candidate"] = self.build_manual_arm_candidate(stored, odom)
         write_json(event_path, stored)
         append_jsonl(self.output_dir / "risk_events.jsonl", stored)
         self.publish_event(stored)
-        self.publish_alarm(stored)
+        if stored.get("candidate_kind") == "formal":
+            self.publish_alarm(stored)
         self.get_logger().info(
-            "new risk event %s class=%s level=%s projection=%s"
-            % (event_id, class_name, risk_level, projection_status)
+            "new risk event %s class=%s kind=%s level=%s projection=%s"
+            % (event_id, class_name, candidate_kind, risk_level, projection_status)
         )
         return stored
+
+    def maybe_publish_passive_close_update(
+        self,
+        stored: Dict[str, Any],
+        event: Dict[str, Any],
+        distance_m: Optional[float],
+    ) -> Optional[Dict[str, Any]]:
+        class_name = str(stored.get("class_name") or event.get("class_name") or "risk")
+        if class_name == "blockage" or stored.get("passive_close_event_published"):
+            return None
+        try:
+            close_enough = float(distance_m) <= float(self.args.passive_close_confirm_distance_m)
+        except (TypeError, ValueError):
+            close_enough = False
+        if not close_enough:
+            return None
+        passive_event = dict(stored)
+        passive_event["event_id"] = f"{stored.get('event_id')}_passive_close_{now_id()}"
+        passive_event["original_event_id"] = stored.get("event_id")
+        passive_event["candidate_kind"] = "passive_close_confirm"
+        passive_event["semantic_mode"] = "passive_record_then_confirm"
+        passive_event["requires_close_confirm"] = True
+        passive_event["distance_m"] = distance_m
+        passive_event["latest_distance_m"] = distance_m
+        passive_event["confidence"] = event.get("confidence")
+        passive_event["latest_confidence"] = event.get("confidence")
+        passive_event["auto_risk_gate"] = event.get("auto_risk_gate")
+        passive_event["approach_risk_gate"] = event.get("approach_risk_gate")
+        stored["passive_close_event_published"] = True
+        stored["passive_close_event_id"] = passive_event["event_id"]
+        stored["passive_close_distance_m"] = distance_m
+        append_jsonl(self.output_dir / "risk_events.jsonl", passive_event)
+        self.publish_event(passive_event)
+        self.get_logger().info(
+            "passive close confirm event %s class=%s distance=%.3f"
+            % (passive_event["event_id"], class_name, float(distance_m))
+        )
+        return passive_event
 
     def publish_event(self, event: Dict[str, Any]) -> None:
         payload = {
@@ -794,7 +952,13 @@ class PrelimDemoNode(Node):
             "class_name": event.get("class_name"),
             "risk_level_hint": event.get("risk_level"),
             "recommended_action_hint": event.get("recommended_action"),
+            "semantic_mode": event.get("semantic_mode"),
+            "arm_operation_semantic": event.get("arm_operation_semantic"),
             "event_id": event.get("event_id"),
+            "candidate_kind": event.get("candidate_kind"),
+            "requires_close_confirm": event.get("requires_close_confirm"),
+            "approach_risk_gate": event.get("approach_risk_gate"),
+            "auto_risk_gate": event.get("auto_risk_gate"),
             "projection_status": event.get("projection_status"),
             "odom_point_xy_m": event.get("odom_point_xy_m"),
             "timestamp": now_iso(),
@@ -810,6 +974,8 @@ class PrelimDemoNode(Node):
             "event_id": event.get("event_id"),
             "risk_level": event.get("risk_level"),
             "recommended_action": event.get("recommended_action"),
+            "semantic_mode": event.get("semantic_mode"),
+            "arm_operation_semantic": event.get("arm_operation_semantic"),
             "class_name": event.get("class_name"),
             "distance_m": event.get("distance_m"),
             "projection_status": event.get("projection_status"),
@@ -905,20 +1071,24 @@ class PrelimDemoNode(Node):
         latency_ms: Optional[float],
     ) -> None:
         formal_count = sum(1 for det in detections if (det.get("auto_risk_gate") or {}).get("allowed"))
+        approach_count = sum(1 for det in detections if (det.get("approach_risk_gate") or {}).get("allowed"))
         state = {
             "updated_at": now_iso(),
             "alarm_active": latest_event is not None,
             "latest_event": latest_event,
             "current_detection_count": len(detections),
             "formal_detection_count": formal_count,
-            "rejected_detection_count": max(0, len(detections) - formal_count),
+            "approach_candidate_count": approach_count,
+            "rejected_detection_count": max(0, len(detections) - approach_count),
             "auto_risk_gates": self.auto_risk_gates,
+            "approach_risk_gates": self.approach_risk_gates,
             "current_detections": [
                 {
                     "class_name": det.get("class_name"),
                     "confidence": det.get("confidence"),
                     "distance_m": det.get("depth_median_m"),
                     "auto_risk_gate": det.get("auto_risk_gate"),
+                    "approach_risk_gate": det.get("approach_risk_gate"),
                 }
                 for det in detections[:10]
             ],
@@ -1255,6 +1425,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--iou", type=float, default=0.70)
     parser.add_argument("--max-det", type=int, default=20)
     parser.add_argument("--max-events-per-frame", type=int, default=3)
+    parser.add_argument("--passive-close-confirm-distance-m", type=float, default=0.40)
     parser.add_argument("--timer-period-s", type=float, default=0.10)
     parser.add_argument("--inference-period-s", type=float, default=0.35)
     parser.add_argument("--fresh-timeout-s", type=float, default=2.0)
@@ -1284,18 +1455,32 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=DEFAULT_AUTO_RISK_GATES_SPEC,
         help="Comma-separated class:min_conf:min_depth_m:max_depth_m gates promoted to formal alarms/map points.",
     )
+    parser.add_argument(
+        "--approach-risk-gates",
+        default=DEFAULT_APPROACH_RISK_GATES_SPEC,
+        help="Comma-separated class:min_conf:min_depth_m:max_depth_m gates that may trigger close approach confirmation.",
+    )
     parser.add_argument("--depth-scale-m", type=float, default=None)
 
     parser.add_argument("--rgb-topic", default="/camera/camera/color/image_raw")
     parser.add_argument("--depth-topic", default="/camera/camera/depth/image_rect_raw")
     parser.add_argument("--camera-info-topic", default="/camera/camera/color/camera_info")
     parser.add_argument("--odom-topic", default="/odom")
+    parser.add_argument("--map-frame", default="map")
+    parser.add_argument("--odom-frame", default="odom")
+    parser.add_argument("--tf-lookup-timeout-s", type=float, default=0.05)
     parser.add_argument("--event-topic", default="/perception/mock_event")
     parser.add_argument("--demo-event-topic", default="/prelim_demo/risk_event")
     parser.add_argument("--alarm-topic", default="/prelim_demo/alarm")
 
     parser.add_argument("--dedup-map-grid-m", type=float, default=0.40)
     parser.add_argument("--dedup-image-grid-px", type=int, default=80)
+    parser.add_argument(
+        "--map-write-policy",
+        choices=["immediate", "approach_confirmed"],
+        default="immediate",
+        help="Write formal risk_map_points immediately, or leave final map confirmation to the approach node.",
+    )
 
     parser.add_argument("--arm-response-mode", choices=["disabled", "manual-candidate"], default="manual-candidate")
     parser.add_argument("--arm-risk-levels", default="high")

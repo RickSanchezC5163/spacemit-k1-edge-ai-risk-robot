@@ -22,6 +22,11 @@ except ImportError:
     ActionClient = None
 
 
+def is_rcl_context_shutdown_error(exc):
+    text = str(exc)
+    return "context is not valid" in text or "rcl_shutdown already called" in text
+
+
 def yaw_from_quat(q):
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
@@ -54,6 +59,7 @@ class RRTFrontierExplorer(Node):
         self.rejected_cells = []
         self.recent_goal_cells = []
         self.last_goal_meta = {}
+        self.current_sample_radius_m = float(args.sample_radius_m)
         self.random = random.Random(args.seed)
         self.goal_pub = self.create_publisher(PoseStamped, args.goal_topic, 10)
         self.create_subscription(OccupancyGrid, args.map_topic, self.map_cb, 10)
@@ -215,6 +221,8 @@ class RRTFrontierExplorer(Node):
             return False
         if self.near_obstacle(cell, self.inflation_cells()):
             return False
+        if not self.goal_clearance_ok(cell):
+            return False
         if self.near_suppressed_goal(cell):
             return False
         dist = math.hypot(cell[0] - start[0], cell[1] - start[1])
@@ -304,8 +312,9 @@ class RRTFrontierExplorer(Node):
                 return best
         return None
 
-    def clearance_m(self, cell):
-        max_radius_cells = max(1, int(self.args.goal_clearance_check_m / self.map_msg.info.resolution))
+    def clearance_m(self, cell, max_distance_m=None):
+        max_distance = self.args.goal_clearance_check_m if max_distance_m is None else max_distance_m
+        max_radius_cells = max(1, int(max_distance / self.map_msg.info.resolution))
         cx, cy = cell
         best_dist_sq = None
         for y in range(max(0, cy - max_radius_cells), min(self.map_msg.info.height, cy + max_radius_cells + 1)):
@@ -319,15 +328,67 @@ class RRTFrontierExplorer(Node):
             return max_radius_cells * self.map_msg.info.resolution
         return math.sqrt(best_dist_sq) * self.map_msg.info.resolution
 
+    def goal_clearance_ok(self, cell):
+        if cell is None:
+            return False
+        return self.clearance_m(cell) >= self.args.min_goal_clearance_m
+
+    def unknown_gain(self, cell, radius_m=None):
+        radius_m = self.args.frontier_unknown_gain_radius_m if radius_m is None else radius_m
+        radius_cells = max(1, int(radius_m / self.map_msg.info.resolution))
+        radius_sq = radius_cells * radius_cells
+        cx, cy = cell
+        count = 0
+        for y in range(max(0, cy - radius_cells), min(self.map_msg.info.height, cy + radius_cells + 1)):
+            for x in range(max(0, cx - radius_cells), min(self.map_msg.info.width, cx + radius_cells + 1)):
+                if (x - cx) ** 2 + (y - cy) ** 2 > radius_sq:
+                    continue
+                if self.map_msg.data[y * self.map_msg.info.width + x] < 0:
+                    count += 1
+        return count
+
+    def sample_radius_m(self, start):
+        if not self.args.adaptive_sample_radius:
+            self.current_sample_radius_m = float(self.args.sample_radius_m)
+            self.last_goal_meta["sample_radius_mode"] = "fixed"
+            self.last_goal_meta["sample_radius_m"] = round(self.current_sample_radius_m, 3)
+            return self.current_sample_radius_m
+
+        local_clearance = self.clearance_m(start, self.args.adaptive_wide_clearance_m)
+        if local_clearance >= self.args.adaptive_wide_clearance_m:
+            mode = "wide"
+            radius = self.args.adaptive_wide_sample_radius_m
+        else:
+            mode = "tight"
+            radius = self.args.adaptive_tight_sample_radius_m
+        self.current_sample_radius_m = float(radius)
+        self.last_goal_meta["sample_radius_mode"] = mode
+        self.last_goal_meta["sample_radius_m"] = round(self.current_sample_radius_m, 3)
+        self.last_goal_meta["local_clearance_m"] = round(local_clearance, 3)
+        self.last_goal_meta["wide_clearance_threshold_m"] = round(
+            float(self.args.adaptive_wide_clearance_m), 3
+        )
+        return self.current_sample_radius_m
+
     def frontier_goal_cell(self, frontier_cell, start_cell, reachable_cells=None):
         resolution = self.map_msg.info.resolution
         ux, uy, direction_source = self.unknown_direction(frontier_cell, start_cell)
         if direction_source == "none":
+            if not self.goal_clearance_ok(frontier_cell):
+                return None, {
+                    "frontier_cell": [frontier_cell[0], frontier_cell[1]],
+                    "candidate_type": "frontier_raw_rejected_clearance",
+                    "direction_source": direction_source,
+                    "goal_clearance_m": round(self.clearance_m(frontier_cell), 3),
+                    "min_goal_clearance_m": round(self.args.min_goal_clearance_m, 3),
+                    "unknown_gain": self.unknown_gain(frontier_cell),
+                }
             return frontier_cell, {
                 "frontier_cell": [frontier_cell[0], frontier_cell[1]],
                 "candidate_type": "frontier_raw",
                 "direction_source": direction_source,
                 "goal_clearance_m": round(self.clearance_m(frontier_cell), 3),
+                "unknown_gain": self.unknown_gain(frontier_cell),
             }
 
         candidates = []
@@ -343,6 +404,8 @@ class RRTFrontierExplorer(Node):
             if reachable_cells is not None and goal_cell not in reachable_cells:
                 continue
             clearance = self.clearance_m(goal_cell)
+            if clearance < self.args.min_goal_clearance_m:
+                continue
             dist_from_start = math.hypot(goal_cell[0] - start_cell[0], goal_cell[1] - start_cell[1])
             candidates.append(
                 {
@@ -355,11 +418,13 @@ class RRTFrontierExplorer(Node):
             )
 
         if not candidates:
-            return frontier_cell, {
+            return None, {
                 "frontier_cell": [frontier_cell[0], frontier_cell[1]],
-                "candidate_type": "frontier_raw_fallback",
+                "candidate_type": "frontier_no_clearance_candidate",
                 "direction_source": direction_source,
                 "goal_clearance_m": round(self.clearance_m(frontier_cell), 3),
+                "min_goal_clearance_m": round(self.args.min_goal_clearance_m, 3),
+                "unknown_gain": self.unknown_gain(frontier_cell),
                 "candidate_count": 0,
             }
 
@@ -380,6 +445,7 @@ class RRTFrontierExplorer(Node):
             "candidate_count": len(candidates),
             "candidate_backoff_m": round(best["backoff_m"], 3),
             "goal_clearance_m": round(best["clearance_m"], 3),
+            "unknown_gain": self.unknown_gain(frontier_cell),
             "candidate_raw_cell": [best["raw_cell"][0], best["raw_cell"][1]],
         }
 
@@ -387,7 +453,7 @@ class RRTFrontierExplorer(Node):
         return max(1, int(self.args.inflation_m / self.map_msg.info.resolution))
 
     def sample_free_cell(self, start):
-        radius_cells = int(self.args.sample_radius_m / self.map_msg.info.resolution)
+        radius_cells = int(self.current_sample_radius_m / self.map_msg.info.resolution)
         for _ in range(100):
             x = self.random.randint(max(0, start[0] - radius_cells), min(self.map_msg.info.width - 1, start[0] + radius_cells))
             y = self.random.randint(max(0, start[1] - radius_cells), min(self.map_msg.info.height - 1, start[1] + radius_cells))
@@ -458,7 +524,7 @@ class RRTFrontierExplorer(Node):
         return clusters
 
     def choose_wfd_goal(self, start, min_goal_cells):
-        radius_cells = max(1, int(self.args.sample_radius_m / self.map_msg.info.resolution))
+        radius_cells = max(1, int(self.current_sample_radius_m / self.map_msg.info.resolution))
         radius_sq = radius_cells * radius_cells
         inflation_cells = self.inflation_cells()
         frontier_cells = set()
@@ -473,7 +539,12 @@ class RRTFrontierExplorer(Node):
                 frontier_cells.add(cell)
             if self.args.free_roam_when_no_frontier and self.is_free_roam_goal(cell, start, min_goal_cells):
                 dist = math.hypot(cell[0] - start[0], cell[1] - start[1])
-                score = dist + self.random.random() * 0.01
+                gain = self.unknown_gain(cell, self.args.free_roam_unknown_gain_radius_m)
+                score = (
+                    self.args.free_roam_unknown_weight * gain
+                    + self.args.free_roam_distance_weight * dist
+                    + self.random.random() * 0.01
+                )
                 if score > best_free_roam_score:
                     best_free_roam = cell
                     best_free_roam_score = score
@@ -512,8 +583,10 @@ class RRTFrontierExplorer(Node):
                 dist_cells = math.hypot(goal_cell[0] - start[0], goal_cell[1] - start[1])
                 if dist_cells < min_goal_cells:
                     continue
+                unknown_gain = int(meta.get("unknown_gain") or self.unknown_gain(frontier_cell))
                 score = (
                     self.args.frontier_size_weight * len(cluster)
+                    + self.args.frontier_unknown_weight * unknown_gain
                     - self.args.frontier_distance_weight * dist_cells
                     + self.random.random() * 0.001
                 )
@@ -523,6 +596,7 @@ class RRTFrontierExplorer(Node):
                         **meta,
                         "frontier_size": len(cluster),
                         "frontier_id": "%d_%d_%d" % (int(cx), int(cy), len(cluster)),
+                        "frontier_score": round(score, 3),
                     }
                     best_score = score
 
@@ -533,6 +607,8 @@ class RRTFrontierExplorer(Node):
             self.last_goal_meta = {
                 "candidate_type": "wfd_free_roam",
                 "goal_clearance_m": round(self.clearance_m(best_free_roam), 3),
+                "unknown_gain": self.unknown_gain(best_free_roam, self.args.free_roam_unknown_gain_radius_m),
+                "free_roam_score": round(best_free_roam_score, 3),
             }
             return best_free_roam, "wfd_free_roam"
         return None, "wfd_no_frontier"
@@ -558,12 +634,19 @@ class RRTFrontierExplorer(Node):
             node_set.add(new_cell)
             if self.args.free_roam_when_no_frontier and self.is_free_roam_goal(new_cell, start, min_goal_cells):
                 dist = math.hypot(new_cell[0] - start[0], new_cell[1] - start[1])
-                score = dist + self.random.random() * 0.01
+                gain = self.unknown_gain(new_cell, self.args.free_roam_unknown_gain_radius_m)
+                score = (
+                    self.args.free_roam_unknown_weight * gain
+                    + self.args.free_roam_distance_weight * dist
+                    + self.random.random() * 0.01
+                )
                 if score > best_free_roam_score:
                     best_free_roam = new_cell
                     best_free_roam_score = score
             if self.is_frontier(new_cell):
                 goal_cell, meta = self.frontier_goal_cell(new_cell, start)
+                if goal_cell is None:
+                    continue
                 if self.near_suppressed_goal(goal_cell):
                     continue
                 d = abs(goal_cell[0] - start[0]) + abs(goal_cell[1] - start[1])
@@ -578,6 +661,8 @@ class RRTFrontierExplorer(Node):
             self.last_goal_meta = {
                 "candidate_type": "free_roam",
                 "goal_clearance_m": round(self.clearance_m(best_free_roam), 3),
+                "unknown_gain": self.unknown_gain(best_free_roam, self.args.free_roam_unknown_gain_radius_m),
+                "free_roam_score": round(best_free_roam_score, 3),
             }
             return best_free_roam, "free_roam"
         return None, "no_frontier"
@@ -593,11 +678,16 @@ class RRTFrontierExplorer(Node):
             return None, "bad_start"
 
         min_goal_cells = int(self.args.min_goal_distance_m / self.map_msg.info.resolution)
+        self.sample_radius_m(start)
+        sample_meta = dict(self.last_goal_meta)
         if self.args.frontier_mode in ("wfd", "hybrid"):
             goal, reason = self.choose_wfd_goal(start, min_goal_cells)
             if goal is not None or self.args.frontier_mode == "wfd":
+                self.last_goal_meta = {**sample_meta, **self.last_goal_meta}
                 return goal, reason
-        return self.choose_rrt_goal(start, min_goal_cells)
+        goal, reason = self.choose_rrt_goal(start, min_goal_cells)
+        self.last_goal_meta = {**sample_meta, **self.last_goal_meta}
+        return goal, reason
 
     def make_goal(self, cell):
         pose = self.robot_pose()
@@ -807,6 +897,10 @@ def parse_args():
     parser.add_argument("--runtime-s", type=float, default=180.0)
     parser.add_argument("--max-goals", type=int, default=12)
     parser.add_argument("--sample-radius-m", type=float, default=4.0)
+    parser.add_argument("--adaptive-sample-radius", action="store_true")
+    parser.add_argument("--adaptive-tight-sample-radius-m", type=float, default=0.60)
+    parser.add_argument("--adaptive-wide-sample-radius-m", type=float, default=1.00)
+    parser.add_argument("--adaptive-wide-clearance-m", type=float, default=0.55)
     parser.add_argument("--min-goal-distance-m", type=float, default=0.55)
     parser.add_argument("--inflation-m", type=float, default=0.20)
     parser.add_argument("--rrt-step-cells", type=int, default=8)
@@ -815,8 +909,10 @@ def parse_args():
     parser.add_argument("--wfd-max-cells", type=int, default=12000)
     parser.add_argument("--min-frontier-cluster-cells", type=int, default=2)
     parser.add_argument("--frontier-cluster-candidate-limit", type=int, default=8)
-    parser.add_argument("--frontier-distance-weight", type=float, default=1.0)
-    parser.add_argument("--frontier-size-weight", type=float, default=0.05)
+    parser.add_argument("--frontier-distance-weight", type=float, default=0.25)
+    parser.add_argument("--frontier-size-weight", type=float, default=1.0)
+    parser.add_argument("--frontier-unknown-weight", type=float, default=0.35)
+    parser.add_argument("--frontier-unknown-gain-radius-m", type=float, default=0.35)
     parser.add_argument("--free-threshold", type=int, default=20)
     parser.add_argument("--occupied-threshold", type=int, default=65)
     parser.add_argument("--wait-ready-s", type=float, default=35.0)
@@ -838,8 +934,12 @@ def parse_args():
     parser.add_argument("--frontier-standoff-m", type=float, default=0.35)
     parser.add_argument("--frontier-backoffs-m", default="0.10,0.18,0.25,0.35")
     parser.add_argument("--goal-clearance-check-m", type=float, default=0.50)
+    parser.add_argument("--min-goal-clearance-m", type=float, default=0.16)
     parser.add_argument("--free-roam-when-no-frontier", action="store_true")
     parser.add_argument("--free-roam-min-distance-m", type=float, default=0.25)
+    parser.add_argument("--free-roam-unknown-weight", type=float, default=0.30)
+    parser.add_argument("--free-roam-distance-weight", type=float, default=0.20)
+    parser.add_argument("--free-roam-unknown-gain-radius-m", type=float, default=0.40)
     parser.add_argument("--map-edge-margin-m", type=float, default=0.15)
     parser.add_argument("--start-free-search-m", type=float, default=0.35)
     parser.add_argument("--send-nav2-action", action="store_true")
@@ -854,9 +954,22 @@ def main():
     node = RRTFrontierExplorer(args)
     try:
         code = node.run()
+    except KeyboardInterrupt:
+        print("RRT_STOP", json.dumps({"reason": "keyboard_interrupt"}), flush=True)
+        code = 130
+    except Exception as exc:
+        if not is_rcl_context_shutdown_error(exc):
+            raise
+        print("RRT_STOP", json.dumps({"reason": "rcl_context_shutdown"}), flush=True)
+        code = 130
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            node.destroy_node()
+        except Exception as exc:
+            if not is_rcl_context_shutdown_error(exc):
+                raise
+        if rclpy.ok():
+            rclpy.shutdown()
     raise SystemExit(code)
 
 

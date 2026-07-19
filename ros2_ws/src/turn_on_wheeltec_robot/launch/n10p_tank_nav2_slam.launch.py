@@ -88,6 +88,7 @@ def _nav2_nodes(configured_params, nav2_cmd_vel, use_sim_time, nav2_autostart):
                 {"use_sim_time": use_sim_time},
                 {"autostart": nav2_autostart},
                 {"node_names": lifecycle_nodes},
+                {"bond_timeout": 12.0},
             ],
         ),
     ]
@@ -112,6 +113,33 @@ def generate_launch_description():
     micro_adjust_clear_m = LaunchConfiguration("micro_adjust_clear_m")
     micro_adjust_direction_deadband_m = LaunchConfiguration("micro_adjust_direction_deadband_m")
     micro_adjust_direction_latch_s = LaunchConfiguration("micro_adjust_direction_latch_s")
+    enable_spin_escape = LaunchConfiguration("enable_spin_escape")
+    spin_escape_turn_changes = LaunchConfiguration("spin_escape_turn_changes")
+    spin_escape_degrees = LaunchConfiguration("spin_escape_degrees")
+    spin_escape_angular_z = LaunchConfiguration("spin_escape_angular_z")
+    spin_escape_cooldown_s = LaunchConfiguration("spin_escape_cooldown_s")
+    enable_micro_adjust_stuck_spin_escape = LaunchConfiguration(
+        "enable_micro_adjust_stuck_spin_escape"
+    )
+    micro_adjust_stuck_spin_min_s = LaunchConfiguration("micro_adjust_stuck_spin_min_s")
+    micro_adjust_stuck_spin_front_blocked_m = LaunchConfiguration(
+        "micro_adjust_stuck_spin_front_blocked_m"
+    )
+    micro_adjust_stuck_spin_clear_m = LaunchConfiguration("micro_adjust_stuck_spin_clear_m")
+    micro_adjust_stuck_spin_cmd_angular_mps = LaunchConfiguration(
+        "micro_adjust_stuck_spin_cmd_angular_mps"
+    )
+    enable_corridor_stuck_spin_escape = LaunchConfiguration("enable_corridor_stuck_spin_escape")
+    corridor_stuck_spin_trigger_m = LaunchConfiguration("corridor_stuck_spin_trigger_m")
+    corridor_stuck_spin_clear_m = LaunchConfiguration("corridor_stuck_spin_clear_m")
+    corridor_stuck_spin_min_s = LaunchConfiguration("corridor_stuck_spin_min_s")
+    corridor_stuck_spin_cmd_angular_mps = LaunchConfiguration(
+        "corridor_stuck_spin_cmd_angular_mps"
+    )
+    corridor_stuck_spin_front_blocked_m = LaunchConfiguration("corridor_stuck_spin_front_blocked_m")
+    corridor_stuck_spin_front_sector_deg = LaunchConfiguration("corridor_stuck_spin_front_sector_deg")
+    corridor_stuck_spin_require_sides = LaunchConfiguration("corridor_stuck_spin_require_sides")
+    corridor_stuck_spin_side_blocked_m = LaunchConfiguration("corridor_stuck_spin_side_blocked_m")
     enable_escape_reverse = LaunchConfiguration("enable_escape_reverse")
     escape_reverse_trigger_m = LaunchConfiguration("escape_reverse_trigger_m")
     escape_reverse_clear_m = LaunchConfiguration("escape_reverse_clear_m")
@@ -153,6 +181,25 @@ def generate_launch_description():
             DeclareLaunchArgument("micro_adjust_clear_m", default_value="0.30"),
             DeclareLaunchArgument("micro_adjust_direction_deadband_m", default_value="0.03"),
             DeclareLaunchArgument("micro_adjust_direction_latch_s", default_value="1.50"),
+            DeclareLaunchArgument("enable_spin_escape", default_value="true"),
+            DeclareLaunchArgument("spin_escape_turn_changes", default_value="3"),
+            DeclareLaunchArgument("spin_escape_degrees", default_value="180.0"),
+            DeclareLaunchArgument("spin_escape_angular_z", default_value="0.35"),
+            DeclareLaunchArgument("spin_escape_cooldown_s", default_value="3.0"),
+            DeclareLaunchArgument("enable_micro_adjust_stuck_spin_escape", default_value="true"),
+            DeclareLaunchArgument("micro_adjust_stuck_spin_min_s", default_value="6.0"),
+            DeclareLaunchArgument("micro_adjust_stuck_spin_front_blocked_m", default_value="0.30"),
+            DeclareLaunchArgument("micro_adjust_stuck_spin_clear_m", default_value="0.40"),
+            DeclareLaunchArgument("micro_adjust_stuck_spin_cmd_angular_mps", default_value="0.05"),
+            DeclareLaunchArgument("enable_corridor_stuck_spin_escape", default_value="true"),
+            DeclareLaunchArgument("corridor_stuck_spin_trigger_m", default_value="0.18"),
+            DeclareLaunchArgument("corridor_stuck_spin_clear_m", default_value="0.24"),
+            DeclareLaunchArgument("corridor_stuck_spin_min_s", default_value="3.0"),
+            DeclareLaunchArgument("corridor_stuck_spin_cmd_angular_mps", default_value="0.06"),
+            DeclareLaunchArgument("corridor_stuck_spin_front_blocked_m", default_value="0.30"),
+            DeclareLaunchArgument("corridor_stuck_spin_front_sector_deg", default_value="20.0"),
+            DeclareLaunchArgument("corridor_stuck_spin_require_sides", default_value="true"),
+            DeclareLaunchArgument("corridor_stuck_spin_side_blocked_m", default_value="0.32"),
             DeclareLaunchArgument("enable_escape_reverse", default_value="true"),
             DeclareLaunchArgument("escape_reverse_trigger_m", default_value="0.16"),
             DeclareLaunchArgument("escape_reverse_clear_m", default_value="0.24"),
@@ -185,6 +232,29 @@ def generate_launch_description():
                     "micro_adjust_clear_m": micro_adjust_clear_m,
                     "micro_adjust_direction_deadband_m": micro_adjust_direction_deadband_m,
                     "micro_adjust_direction_latch_s": micro_adjust_direction_latch_s,
+                    "enable_spin_escape": enable_spin_escape,
+                    "spin_escape_turn_changes": spin_escape_turn_changes,
+                    "spin_escape_degrees": spin_escape_degrees,
+                    "spin_escape_angular_z": spin_escape_angular_z,
+                    "spin_escape_cooldown_s": spin_escape_cooldown_s,
+                    "enable_micro_adjust_stuck_spin_escape": enable_micro_adjust_stuck_spin_escape,
+                    "micro_adjust_stuck_spin_min_s": micro_adjust_stuck_spin_min_s,
+                    "micro_adjust_stuck_spin_front_blocked_m": (
+                        micro_adjust_stuck_spin_front_blocked_m
+                    ),
+                    "micro_adjust_stuck_spin_clear_m": micro_adjust_stuck_spin_clear_m,
+                    "micro_adjust_stuck_spin_cmd_angular_mps": (
+                        micro_adjust_stuck_spin_cmd_angular_mps
+                    ),
+                    "enable_corridor_stuck_spin_escape": enable_corridor_stuck_spin_escape,
+                    "corridor_stuck_spin_trigger_m": corridor_stuck_spin_trigger_m,
+                    "corridor_stuck_spin_clear_m": corridor_stuck_spin_clear_m,
+                    "corridor_stuck_spin_min_s": corridor_stuck_spin_min_s,
+                    "corridor_stuck_spin_cmd_angular_mps": corridor_stuck_spin_cmd_angular_mps,
+                    "corridor_stuck_spin_front_blocked_m": corridor_stuck_spin_front_blocked_m,
+                    "corridor_stuck_spin_front_sector_deg": corridor_stuck_spin_front_sector_deg,
+                    "corridor_stuck_spin_require_sides": corridor_stuck_spin_require_sides,
+                    "corridor_stuck_spin_side_blocked_m": corridor_stuck_spin_side_blocked_m,
                     "enable_escape_reverse": enable_escape_reverse,
                     "escape_reverse_trigger_m": escape_reverse_trigger_m,
                     "escape_reverse_clear_m": escape_reverse_clear_m,
