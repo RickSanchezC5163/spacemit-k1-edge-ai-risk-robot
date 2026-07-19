@@ -111,8 +111,51 @@ Nav2 footprint ~= 0.50 m x 0.44 m outer envelope
 
 最终实机 run 目录为 `/home/soc/edge-ai-robot-k1/outputs/real_k1_rrt_nav2_mapping_20260718_024536`，地图保存为 `maps/map_after_rrt_free_roam_stop_20260718_030446.yaml`。后期 RRT 进入大量 `wfd_free_roam` 后多次 `progress_timeout/status_6`，因此主动停止并保存地图；下一步应收紧 late-stage free-roam，避免低 clearance 边界目标空转。
 
+## 2026-07-19 实机完整链路更新
+
+在 2m 复赛复刻场景中，当前实机链路已进入“自由探图 + YOLO 风险识别 + blockage 靠近 + 近距离确认预留”的完整演示形态。YOLO 使用 SpaceMIT Execution Provider，默认 `1s/frame`，不开视频流，避免 UI 和 DDS 负载干扰 Nav2。
+
+当前 2m 默认 RRT 档位：
+
+```text
+RRT_SAMPLE_RADIUS_M=0.50
+RRT_MIN_GOAL_DISTANCE_M=0.30
+RRT_INFLATION_M=0.12
+RRT_FRONTIER_STANDOFF_M=0.10
+RRT_MIN_GOAL_CLEARANCE_M=0.24
+RRT_MAP_EDGE_MARGIN_M=0.10
+RRT_FREE_ROAM_MIN_DISTANCE_M=0.15
+RRT_REPLAN_SLEEP_S=2.5
+```
+
+风险识别采用“候选记录”和“正式落图”分离：
+
+```text
+APPROACH_RISK_GATES: conf >= 0.15, depth 0.20-1.20m
+AUTO_RISK_GATES:     conf >= 0.60, depth 0.20-1.20m
+RISK_MAP_WRITE_POLICY=approach_confirmed
+```
+
+`crack`、`corrosion`、`leakage` 先作为候选记录，RRT 不被打断；车辆自然靠近后再做近距离确认。`blockage` 可触发事件驱动靠近，并预留机械臂处置语义。风险事件现在会尝试通过 TF 写入 `map_point_xy_m`；如果只有 `odom_point_xy_m`，可视化会标为 `odom≈` 近似候选，不再当作精确地图点。
+
+新增自适应可视化工具：
+
+```bash
+python3 tools/visualize_k1_map_rrt_risk_overlay.py \
+  --map-yaml <run>/maps/<map>.yaml \
+  --rrt-log <run>/rrt_unlimited.log \
+  --risk-events <run>/yolo_risk/risk_events.jsonl \
+  --approach-records <run>/risk_approach/risk_approach_records.jsonl \
+  --output-dir <local_visualization_dir>
+```
+
+该工具会根据 SLAM 地图墙线自动估计主方向，把地图旋成横平竖直，并叠加 RRT goal、YOLO 风险候选和 approach 记录。2026-07-19 一轮数据中，YOLO 记录 26 个风险候选，过滤 `confidence >= 0.50` 后剩 7 个高置信候选；该轮旧日志尚无 `map_point_xy_m`，因此这些点只能作为 `odom≈` 诊断点。
+
+当前隧道 / 窄通道问题主要来自规则层保守叠加：RRT 目标 clearance、Nav2 footprint/inflation 和 safety guard 的 corridor stuck/spin escape 同时限制了进入窄通道的意愿。下一步建议加入明确的 `corridor_mode`：左右近但前方仍有连续空间时，低速居中前进；只有前方稳定堵住且 odom 无进展时，才触发 180 度掉头。
+
 ## 更新记录
 
+- **2026-07-19**：打通 K1 实机自由探图、SpaceMIT EP YOLO 风险候选记录、blockage 靠近和近距离确认预留；修正风险点坐标系，区分 `map_point_xy_m` 与 `odom≈` 候选；新增自适应横平竖直地图 + RRT + 风险点可视化工具。
 - **2026-07-18**：完成 K1 实机约 2.5m 场地纯 RRT/Nav2/SLAM 建图验证；加入 45 度侧向微调、贴边短后退和更稳的薄壁角落处理，保存最终地图 `map_after_rrt_free_roam_stop_20260718_030446.yaml`。
 - **2026-07-17**：补充 K1 实机 2m 场地 RRT/Nav2 自动探图脚本、Windows 启动入口、保守 footprint/边界参数，并记录侧向擦碰的工程原因与修正方式。
 - **2026-07-12**：完成机械臂 MoveIt 地面任务 TCP 到达验证；以 `link4_tip_link` 作为第四截末端 TCP，1000 个保守地面工作区目标全部规划并到达，最大 TCP 误差约 7.18 mm，平均约 2.52 mm。记录见 `docs/mechanical_arm_moveit_tcp_reach_20260712.md`，本地输出位于 `outputs/moveit_arm_visual_ground_tcp_direct_marker_1000/`。
