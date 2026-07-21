@@ -24,36 +24,6 @@
 
 </div>
 
-## 2026-07-22 Motion-Control and Semantic Mapping Update
-
-The tracked-base firmware now clears incremental-PI state at an explicit hard
-stop while keeping the original PI formula and gains. The matching ROS serial
-driver sends security-enable frames only during startup, so command-loss
-stopping remains active without periodically clearing PI accumulation during a
-low-speed action.
-
-The new semantic mapping controller provides direct odometry targets, fresh
-odometry gates, zero-command flushing, settled-state checks, drive yaw hold,
-LiDAR emergency stopping, and `/cmd_vel_raw` publisher auditing. Routes are
-taught at runtime and replayed from exported JSONL events. No newly recorded
-competition route, event log, waypoint list, or map coordinate is included in
-this update.
-
-```bash
-bash tools/start_k1_semantic_mapping_controller.sh mapping-start
-
-# Dry-run and inspect a route captured by the controller.
-python3 tools/replay_k1_semantic_events.py route.jsonl
-
-# Execute only after restoring the robot to the taught start pose.
-python3 tools/replay_k1_semantic_events.py route.jsonl --execute
-
-bash tools/start_k1_semantic_mapping_controller.sh mapping-stop
-```
-
-The reviewed firmware patch and matching HEX are documented in
-[`firmware/README.md`](firmware/README.md).
-
 ## 项目简介
 
 本仓库为进迭时空 K1 MUSE Pi Pro 边缘 AI 应用赛道的公开源码提交版。项目面向 GPS 拒止、通信受限、云端不可依赖的巡检场景，构建一套在端侧完成建图、感知、风险定位、处置规划和报告生成的移动机器人系统。
@@ -87,7 +57,17 @@ D435 RGB-D -> YOLOv8n 本地推理 -> 风险事件
 RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地 LLM 风险报告
 ```
 
-## 2026-07-20 实机完整链路基线
+## 2026-07-22 实机完整链路基线
+
+在 7 月 20 日完整链路的基础上，本次更新完成了履带底盘动作边界和语义建图控制优化：
+
+- STM32 固件将 A/B 两路增量 PI 状态显式化，并在 hard stop 时清空误差历史和 PWM 累加量；PI 公式、增益、方向和限幅保持不变，Keil 全量重建结果为 0 错误、0 警告。
+- ROS 串口驱动的安全使能帧改为仅在启动时发送，避免运行期间周期性零速帧反复触发 hard stop 和 PI 清零；命令超时停车保护继续保留。
+- 新增 34 个直接使用 odom 目标值的前进、后退和转向语义，不再使用距离或角度补偿倍数。
+- 语义建图控制器加入 odom 新鲜度检查、零速刷新、停稳判定、直行航向保持、LiDAR 急停和 `/cmd_vel_raw` 发布者唯一性检查。
+- 路线由运行时语义操作采集并导出为 JSONL，再由复刻工具读取执行。此次开源更新不包含新采集的复赛路线、事件日志、固定点位或地图坐标。
+
+固件补丁、已验证 HEX 和校验值见 [`firmware/README.md`](firmware/README.md)；通用控制入口为 `tools/start_k1_semantic_mapping_controller.sh`，复刻入口为 `tools/replay_k1_semantic_events.py`。
 
 当前 K1 实机基线是在约 `2m x 2m` 复赛复刻场地中，同时运行自由探图、风险识别、blockage 接近、USB 近距离确认和机械臂语义切换。主 D435 YOLO 使用 SpaceMIT Execution Provider，默认 `1s/frame`，不开视频流；原始 RGB-D 不经过 ROS2 DDS 广播。
 
@@ -221,6 +201,7 @@ python3 tools/visualize_k1_map_rrt_risk_overlay.py \
 
 ## 更新记录
 
+- **2026-07-22**：完成履带底盘跨动作 PI 残留修复和安全使能帧启动期单次发送；发布 34 个直接 odom 语义及运行时采集、建图、停稳检查和 JSONL 复刻工具。实机完成 57 个语义动作的采集与复刻，动作全部结束且未触发超时、取消或 LiDAR 急停；开源仓库不包含该路线的固定点位和地图坐标。
 - **2026-07-20**：完成 K1 实机 `SLAM + Nav2 + RRT + SpaceMIT EP YOLO + blockage approach + USB close confirm` 完整链验证；加入拍摄时刻风险投影、多帧空间融合、有界候选内存、RRT 事件驱动重算和完整资源统计，并保存最终地图及风险可视化结果。
 - **2026-07-19**：打通 K1 实机自由探图、SpaceMIT EP YOLO 风险候选记录、blockage 靠近和近距离确认预留；修正风险点坐标系，区分 `map_point_xy_m` 与 `odom≈` 候选；新增自适应横平竖直地图 + RRT + 风险点可视化工具。
 - **2026-07-18**：完成 K1 实机约 2.5m 场地纯 RRT/Nav2/SLAM 建图验证；加入 45 度侧向微调、贴边短后退和更稳的薄壁角落处理，保存最终地图 `map_after_rrt_free_roam_stop_20260718_030446.yaml`。

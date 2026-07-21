@@ -23,36 +23,6 @@
 
 </div>
 
-## 2026-07-22 Motion-Control and Semantic Mapping Update
-
-The tracked-base firmware now clears incremental-PI state at an explicit hard
-stop while keeping the original PI formula and gains. The matching ROS serial
-driver sends security-enable frames only during startup, so command-loss
-stopping remains active without periodically clearing PI accumulation during a
-low-speed action.
-
-The new semantic mapping controller provides direct odometry targets, fresh
-odometry gates, zero-command flushing, settled-state checks, drive yaw hold,
-LiDAR emergency stopping, and `/cmd_vel_raw` publisher auditing. Routes are
-taught at runtime and replayed from exported JSONL events. No newly recorded
-competition route, event log, waypoint list, or map coordinate is included in
-this update.
-
-```bash
-bash tools/start_k1_semantic_mapping_controller.sh mapping-start
-
-# Dry-run and inspect a route captured by the controller.
-python3 tools/replay_k1_semantic_events.py route.jsonl
-
-# Execute only after restoring the robot to the taught start pose.
-python3 tools/replay_k1_semantic_events.py route.jsonl --execute
-
-bash tools/start_k1_semantic_mapping_controller.sh mapping-stop
-```
-
-The reviewed firmware patch and matching HEX are documented in
-[`firmware/README.md`](firmware/README.md).
-
 ## Overview
 
 This repository is a source-available submission for the SpacemiT K1 MUSE Pi
