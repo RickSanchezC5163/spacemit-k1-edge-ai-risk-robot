@@ -223,7 +223,6 @@ class WheeltecTankBase(Node):
         self.last_diag_tx = 0
         self.last_diag_rx = 0
         self.last_diag_frames = 0
-        self.last_security_time = 0.0
         self.last_stop_request_time = 0.0
 
         cmd_topic = self.get_parameter("cmd_vel_topic").value
@@ -358,15 +357,6 @@ class WheeltecTankBase(Node):
                 self.stop_kick_feedback_wz,
             )
         )
-
-    def send_security_enable_frames(self, now):
-        if not (self.send_security_enable_on_start and self.security_ply):
-            return
-        if now - self.last_security_time < 1.0:
-            return
-        self.serial.write(make_security_frame(True, legacy=False))
-        self.serial.write(make_security_frame(True, legacy=True))
-        self.last_security_time = now
 
     def cmd_callback(self, msg):
         prev_vx = self.cmd_vx
@@ -525,7 +515,6 @@ class WheeltecTankBase(Node):
 
     def control_tick(self):
         now = time.monotonic()
-        self.send_security_enable_frames(now)
         if now < self.stop_kick_until:
             if self.stop_kick_until_stopped and self.stop_kick_is_done():
                 self.stop_kick_until = 0.0

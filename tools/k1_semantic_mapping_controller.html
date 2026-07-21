@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>K1 语义建图遥控器</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef1f3;
+      --surface: #ffffff;
+      --ink: #182027;
+      --muted: #65717c;
+      --line: #c9d0d5;
+      --primary: #176b4d;
+      --primary-soft: #e4f1eb;
+      --blue: #1876b8;
+      --orange: #c46a12;
+      --danger: #b42318;
+      --unknown: #c7ccd0;
+      --occupied: #171c20;
+      --free: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      letter-spacing: 0;
+    }
+    button { font: inherit; }
+    header {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 20px; font-weight: 600; }
+    .status-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--orange); }
+    .status-dot.online { background: var(--primary); }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 12px;
+      padding: 12px;
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+    .map-panel, .control-panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .map-panel { min-width: 0; overflow: hidden; }
+    .map-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .map-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .canvas-wrap {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      min-height: 430px;
+      max-height: calc(100vh - 118px);
+      background: var(--unknown);
+      position: relative;
+    }
+    canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+    .map-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .control-panel { padding: 12px; display: grid; align-content: start; gap: 14px; }
+    .readout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .metric {
+      padding: 9px;
+      background: #f4f6f7;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      min-width: 0;
+    }
+    .metric-label { color: var(--muted); font-size: 12px; }
+    .metric-value { margin-top: 3px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+    .motion-state {
+      padding: 10px;
+      border-left: 4px solid var(--primary);
+      background: var(--primary-soft);
+    }
+    .motion-state.busy { border-left-color: var(--orange); background: #fff3df; }
+    .motion-title { font-weight: 600; }
+    .motion-detail { margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .group { display: grid; gap: 7px; }
+    .group-title { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .button-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .motion-btn, .utility-btn, .stop-btn {
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--surface);
+      color: var(--ink);
+      min-height: 42px;
+      padding: 7px 5px;
+      cursor: pointer;
+    }
+    .motion-btn:hover, .utility-btn:hover { border-color: var(--primary); background: var(--primary-soft); }
+    .motion-btn:disabled { cursor: not-allowed; opacity: .4; }
+    .symbol { display: block; font-size: 18px; line-height: 18px; }
+    .button-label { display: block; margin-top: 3px; font-size: 12px; white-space: nowrap; }
+    .stop-btn {
+      width: 100%;
+      min-height: 52px;
+      background: var(--danger);
+      color: #fff;
+      border-color: var(--danger);
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .utility-btn { min-height: 32px; padding: 5px 9px; font-size: 12px; }
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+    .swatch { width: 12px; height: 12px; border: 1px solid var(--line); }
+    .swatch.wall { background: var(--occupied); }
+    .swatch.trail { background: var(--blue); border-radius: 50%; }
+    .swatch.robot { background: var(--primary); transform: rotate(45deg); }
+    .error { color: var(--danger); }
+    @media (max-width: 850px) {
+      main { grid-template-columns: 1fr; }
+      .canvas-wrap { min-height: 320px; max-height: none; }
+      .control-panel { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 430px) {
+      header { align-items: flex-start; flex-direction: column; }
+      main { padding: 8px; }
+      .button-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .map-toolbar { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>K1 语义建图遥控器</h1>
+    <div class="status-line"><span id="connectionDot" class="status-dot"></span><span id="connectionText">连接中</span><span id="mapStamp">map --</span></div>
+  </header>
+  <main>
+    <section class="map-panel">
+      <div class="map-toolbar">
+        <div><span id="cursorCoord">x=--, y=--</span> · <span id="mapMeta">等待 /map</span></div>
+        <div class="map-actions">
+          <button id="resetTrail" class="utility-btn" type="button">清除轨迹</button>
+          <button id="exportPng" class="utility-btn" type="button">导出 PNG</button>
+          <button id="exportJson" class="utility-btn" type="button">导出 JSON</button>
+        </div>
+      </div>
+      <div id="canvasWrap" class="canvas-wrap">
+        <canvas id="mapCanvas" aria-label="实时SLAM地图、机器人位置和行驶轨迹"></canvas>
+        <div id="mapEmpty" class="map-empty">等待 SLAM 地图</div>
+      </div>
+    </section>
+    <aside class="control-panel">
+      <div class="readout">
+        <div class="metric"><div class="metric-label">map 坐标</div><div id="poseValue" class="metric-value">--</div></div>
+        <div class="metric"><div class="metric-label">前 / 后净空</div><div id="scanValue" class="metric-value">--</div></div>
+      </div>
+      <div id="motionState" class="motion-state">
+        <div id="motionTitle" class="motion-title">待命</div>
+        <div id="motionDetail" class="motion-detail">progress --</div>
+      </div>
+      <div class="group">
+        <div class="group-title">前进</div>
+        <div id="forwardButtons" class="button-grid"></div>
+      </div>
+      <div class="group">
+        <div class="group-title">后退</div>
+        <div id="reverseButtons" class="button-grid"></div>
+      </div>
+      <div class="group">
+        <div class="group-title">左转</div>
+        <div id="leftButtons" class="button-grid"></div>
+      </div>
+      <div class="group">
+        <div class="group-title">右转</div>
+        <div id="rightButtons" class="button-grid"></div>
+      </div>
+      <button id="stopButton" class="stop-btn" type="button">■ STOP</button>
+      <div class="legend">
+        <span class="legend-item"><span class="swatch wall"></span>障碍</span>
+        <span class="legend-item"><span class="swatch trail"></span>轨迹</span>
+        <span class="legend-item"><span class="swatch robot"></span>车位</span>
+      </div>
+    </aside>
+  </main>
+  <script>
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const wrap = document.getElementById('canvasWrap');
+    let state = null;
+    let mapData = null;
+    let mapImage = null;
+    let fit = null;
+    let busy = false;
+
+    function makeButton(item, symbol) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'motion-btn';
+      button.dataset.semantic = item.code;
+      const value = item.kind === 'drive' ? `${Math.round(item.requested_value * 100)}cm` : `${Math.round(item.requested_value)}°`;
+      button.innerHTML = `<span class="symbol">${symbol}</span><span class="button-label">${value}</span>`;
+      button.setAttribute('aria-label', item.label);
+      button.addEventListener('click', () => sendMotion(item.code));
+      return button;
+    }
+
+    function buildControls(semantics) {
+      const groups = {
+        FORWARD: [document.getElementById('forwardButtons'), '↑'],
+        REVERSE: [document.getElementById('reverseButtons'), '↓'],
+        LEFT: [document.getElementById('leftButtons'), '↶'],
+        RIGHT: [document.getElementById('rightButtons'), '↷']
+      };
+      Object.values(groups).forEach(([root]) => { if (!root.children.length) root.textContent = ''; });
+      semantics.forEach(item => {
+        const prefix = item.code.split('_')[0];
+        const group = groups[prefix];
+        if (group && !group[0].querySelector(`[data-semantic="${item.code}"]`)) group[0].appendChild(makeButton(item, group[1]));
+      });
+    }
+
+    async function sendMotion(semantic) {
+      if (busy) return;
+      const response = await fetch('/api/motion', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({semantic})
+      });
+      const payload = await response.json();
+      if (!response.ok) showError(payload.error || payload.reason || '动作拒绝');
+      await pollState();
+    }
+
+    async function sendStop() {
+      await fetch('/api/stop', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      await pollState();
+    }
+
+    function showError(message) {
+      const detail = document.getElementById('motionDetail');
+      detail.textContent = message;
+      detail.classList.add('error');
+      setTimeout(() => detail.classList.remove('error'), 2500);
+    }
+
+    function formatMeters(value) { return value == null ? '--' : `${value.toFixed(2)}m`; }
+
+    function updateStateView() {
+      if (!state) return;
+      const pose = state.map_pose;
+      document.getElementById('poseValue').textContent = pose ? `${pose.x.toFixed(2)}, ${pose.y.toFixed(2)} · ${pose.yaw_deg.toFixed(0)}°` : '--';
+      document.getElementById('scanValue').textContent = `${formatMeters(state.scan.front_m)} / ${formatMeters(state.scan.rear_m)}`;
+      const motion = state.motion;
+      busy = motion.state === 'running';
+      document.getElementById('motionState').classList.toggle('busy', busy);
+      document.getElementById('motionTitle').textContent = busy ? motion.label : (motion.result ? `完成 · ${motion.result}` : '待命');
+      const progress = motion.unit === 'm' ? `${(motion.progress * 100).toFixed(1)} / ${(motion.target * 100).toFixed(1)} cm` : `${motion.progress.toFixed(1)} / ${motion.target.toFixed(1)}°`;
+      document.getElementById('motionDetail').textContent = motion.semantic ? `${motion.semantic} · ${progress}` : 'progress --';
+      document.querySelectorAll('.motion-btn').forEach(button => { button.disabled = busy; });
+      if (state.map) {
+        document.getElementById('mapMeta').textContent = `${state.map.width}×${state.map.height} · ${(state.map.resolution * 100).toFixed(1)}cm/px`;
+        document.getElementById('mapStamp').textContent = `map v${state.map.version}`;
+      }
+    }
+
+    async function pollState() {
+      try {
+        const response = await fetch('/api/state', {cache: 'no-store'});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        state = await response.json();
+        document.getElementById('connectionDot').classList.add('online');
+        document.getElementById('connectionText').textContent = 'K1 在线';
+        buildControls(state.semantics || []);
+        updateStateView();
+        if (state.map && (!mapData || mapData.version !== state.map.version)) await loadMap(state.map.version);
+        draw();
+      } catch (error) {
+        document.getElementById('connectionDot').classList.remove('online');
+        document.getElementById('connectionText').textContent = '连接断开';
+      }
+    }
+
+    async function loadMap(version) {
+      const response = await fetch(`/api/map?version=${mapData ? mapData.version : -1}`, {cache: 'no-store'});
+      if (response.status === 204) return;
+      if (!response.ok) return;
+      mapData = await response.json();
+      const offscreen = document.createElement('canvas');
+      offscreen.width = mapData.width;
+      offscreen.height = mapData.height;
+      const offctx = offscreen.getContext('2d');
+      const image = offctx.createImageData(mapData.width, mapData.height);
+      for (let i = 0; i < mapData.data.length; i++) {
+        const value = mapData.data[i];
+        let shade = 199;
+        if (value >= 65) shade = 23;
+        else if (value >= 0) shade = Math.round(255 - value * 1.5);
+        const offset = i * 4;
+        image.data[offset] = shade;
+        image.data[offset + 1] = shade;
+        image.data[offset + 2] = shade;
+        image.data[offset + 3] = 255;
+      }
+      offctx.putImageData(image, 0, 0);
+      mapImage = offscreen;
+      document.getElementById('mapEmpty').style.display = 'none';
+    }
+
+    function resizeCanvas() {
+      const rect = wrap.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+
+    function computeFit() {
+      if (!mapData) return null;
+      const rect = canvas.getBoundingClientRect();
+      const pad = 10;
+      const aspect = mapData.width / mapData.height;
+      let width = rect.width - pad * 2;
+      let height = width / aspect;
+      if (height > rect.height - pad * 2) {
+        height = rect.height - pad * 2;
+        width = height * aspect;
+      }
+      return {x: (rect.width - width) / 2, y: (rect.height - height) / 2, width, height};
+    }
+
+    function worldToCanvas(x, y) {
+      if (!mapData || !fit) return null;
+      const origin = mapData.origin;
+      const dx = x - origin.x;
+      const dy = y - origin.y;
+      const c = Math.cos(origin.yaw);
+      const s = Math.sin(origin.yaw);
+      const mx = (c * dx + s * dy) / mapData.resolution;
+      const my = (-s * dx + c * dy) / mapData.resolution;
+      return {
+        x: fit.x + mx / mapData.width * fit.width,
+        y: fit.y + fit.height - my / mapData.height * fit.height
+      };
+    }
+
+    function canvasToWorld(x, y) {
+      if (!mapData || !fit || x < fit.x || x > fit.x + fit.width || y < fit.y || y > fit.y + fit.height) return null;
+      const mx = (x - fit.x) / fit.width * mapData.width * mapData.resolution;
+      const my = (fit.y + fit.height - y) / fit.height * mapData.height * mapData.resolution;
+      const c = Math.cos(mapData.origin.yaw);
+      const s = Math.sin(mapData.origin.yaw);
+      return {x: mapData.origin.x + c * mx - s * my, y: mapData.origin.y + s * mx + c * my};
+    }
+
+    function draw() {
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      if (!mapData || !mapImage) return;
+      fit = computeFit();
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(fit.x, fit.y + fit.height);
+      ctx.scale(1, -1);
+      ctx.drawImage(mapImage, 0, 0, fit.width, fit.height);
+      ctx.restore();
+
+      const trail = state?.trail || [];
+      if (trail.length > 1) {
+        ctx.beginPath();
+        trail.forEach((point, index) => {
+          const pixel = worldToCanvas(point.x, point.y);
+          if (!pixel) return;
+          if (index === 0) ctx.moveTo(pixel.x, pixel.y); else ctx.lineTo(pixel.x, pixel.y);
+        });
+        ctx.strokeStyle = '#1876b8';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+
+      if (state?.map_pose) {
+        const pixel = worldToCanvas(state.map_pose.x, state.map_pose.y);
+        if (pixel) {
+          ctx.save();
+          ctx.translate(pixel.x, pixel.y);
+          ctx.rotate(-state.map_pose.yaw_deg * Math.PI / 180);
+          ctx.beginPath();
+          ctx.moveTo(12, 0);
+          ctx.lineTo(-8, -7);
+          ctx.lineTo(-8, 7);
+          ctx.closePath();
+          ctx.fillStyle = '#176b4d';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+
+    canvas.addEventListener('mousemove', event => {
+      const rect = canvas.getBoundingClientRect();
+      const point = canvasToWorld(event.clientX - rect.left, event.clientY - rect.top);
+      document.getElementById('cursorCoord').textContent = point ? `x=${point.x.toFixed(3)}, y=${point.y.toFixed(3)}` : 'x=--, y=--';
+    });
+    canvas.addEventListener('mouseleave', () => { document.getElementById('cursorCoord').textContent = 'x=--, y=--'; });
+    document.getElementById('stopButton').addEventListener('click', sendStop);
+    document.getElementById('resetTrail').addEventListener('click', async () => {
+      await fetch('/api/trail/reset', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      await pollState();
+    });
+    document.getElementById('exportPng').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = `k1-map-${new Date().toISOString().replaceAll(':', '-')}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+    document.getElementById('exportJson').addEventListener('click', async () => {
+      const mapResponse = await fetch('/api/map');
+      const map = mapResponse.ok ? await mapResponse.json() : null;
+      const blob = new Blob([JSON.stringify({state, map}, null, 2)], {type: 'application/json'});
+      const link = document.createElement('a');
+      link.download = `k1-map-${new Date().toISOString().replaceAll(':', '-')}.json`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    });
+    new ResizeObserver(resizeCanvas).observe(wrap);
+    setInterval(pollState, 500);
+    pollState();
+  </script>
+</body>
+</html>

@@ -1,0 +1,230 @@
+--- a/BALANCE/balance.c
++++ b/BALANCE/balance.c
+@@ -8,10 +8,42 @@
+ int robot_mode_check_flag=0; 
+ 
+ short test_num;
+-u8 command_lost_count=0;//
+-volatile u8 Motion_Stop_Request=0;
+-
+-Encoder OriginalEncoder; //Encoder raw data //编码器原始数据     
++u8 command_lost_count=0;//
++volatile u8 Motion_Stop_Request=0;
++
++typedef struct
++{
++	float bias;
++	float last_bias;
++	float pwm_acc;
++} VelocityPIState;
++
++static VelocityPIState g_velocity_pi_a = {0};
++static VelocityPIState g_velocity_pi_b = {0};
++
++volatile float debug_pi_a_acc=0.0f;
++volatile float debug_pi_b_acc=0.0f;
++volatile float debug_target_a=0.0f;
++volatile float debug_target_b=0.0f;
++volatile float debug_encoder_a=0.0f;
++volatile float debug_encoder_b=0.0f;
++volatile int debug_hard_stop_count=0;
++volatile int debug_pi_reset_count=0;
++
++void Reset_Velocity_PI(void)
++{
++	g_velocity_pi_a.bias=0.0f;
++	g_velocity_pi_a.last_bias=0.0f;
++	g_velocity_pi_a.pwm_acc=0.0f;
++	g_velocity_pi_b.bias=0.0f;
++	g_velocity_pi_b.last_bias=0.0f;
++	g_velocity_pi_b.pwm_acc=0.0f;
++	debug_pi_a_acc=0.0f;
++	debug_pi_b_acc=0.0f;
++	debug_pi_reset_count++;
++}
++
++Encoder OriginalEncoder; //Encoder raw data //编码器原始数据     
+ static void Motion_Hard_Stop(void)
+ {
+ 	Move_X=0;
+@@ -25,6 +57,10 @@
+ 	MOTOR_B.Motor_Pwm=0;
+ 	MOTOR_C.Motor_Pwm=0;
+ 	MOTOR_D.Motor_Pwm=0;
++	debug_target_a=0.0f;
++	debug_target_b=0.0f;
++	Reset_Velocity_PI();
++	debug_hard_stop_count++;
+ 	Set_Pwm(0,0,0,0,0);
+ }
+ /**************************************************************************
+@@ -181,12 +217,14 @@
+ 入口参数：无
+ 返回  值：无
+ **************************************************************************/
+-void Balance_task(void *pvParameters)
+-{ 
+-	  u32 lastWakeTime = getSysTickCnt();
+-
+-    while(1)
+-    {	
++void Balance_task(void *pvParameters)
++{ 
++	  u32 lastWakeTime = getSysTickCnt();
++		u8 hard_stopped_this_cycle;
++
++    while(1)
++    {	
++			hard_stopped_this_cycle=0;
+ 			// This task runs at a frequency of 100Hz (10ms control once)
+ 			//此任务以100Hz的频率运行（10ms控制一次）
+ 			vTaskDelayUntil(&lastWakeTime, F2T(RATE_100_HZ)); 
+@@ -197,8 +235,10 @@
+ 			Buzzer_count1++;
+ 			//Get the encoder data, that is, the real time wheel speed, 
+ 			//and convert to transposition international units
+-			//获取编码器数据，即车轮实时速度，并转换位国际单位
+-			Get_Velocity_Form_Encoder();   
++			//获取编码器数据，即车轮实时速度，并转换位国际单位
++			Get_Velocity_Form_Encoder();   
++			debug_encoder_a=MOTOR_A.Encoder;
++			debug_encoder_b=MOTOR_B.Encoder;
+ 			
+ 			//Click the user button to update the gyroscope zero
+ 				//单击用户按键更新陀螺仪零点
+@@ -211,6 +251,7 @@
+ 				{
+ 					Motion_Stop_Request=0;
+ 					Motion_Hard_Stop();
++					hard_stopped_this_cycle=1;
+ 				}
+ 
+ 				if(APP_ON_Flag==0 && Remote_ON_Flag==0 && PS2_ON_Flag==0)
+@@ -218,24 +259,29 @@
+ 					if(command_lost_count<250)
+ 						command_lost_count++;
+ 
+-					if(command_lost_count>25)
++					if(command_lost_count>25 && !hard_stopped_this_cycle)
++					{
+ 						Motion_Hard_Stop();
+-				}
+-				if      (APP_ON_Flag)      Get_RC();         //Handle the APP remote commands //处理APP遥控命令
+-				else if (Remote_ON_Flag)   Remote_Control(); //Handle model aircraft remote commands //处理航模遥控命令
+-				else if (PS2_ON_Flag)      PS2_control();    //Handle PS2 controller commands //处理PS2手柄控制命令
+-				
+-				//CAN, Usart 1, Usart 3, Uart5 control can directly get the three axis target speed, 
+-				//without additional processing
+-				//CAN、串口1、串口3(ROS)、串口5控制直接得到三轴目标速度，无须额外处理
+-				else                      Drive_Motor(Move_X, Move_Y, Move_Z);
++						hard_stopped_this_cycle=1;
++					}
++				}
++				if(!hard_stopped_this_cycle)
++				{
++					if      (APP_ON_Flag)      Get_RC();         //Handle the APP remote commands //处理APP遥控命令
++					else if (Remote_ON_Flag)   Remote_Control(); //Handle model aircraft remote commands //处理航模遥控命令
++					else if (PS2_ON_Flag)      PS2_control();    //Handle PS2 controller commands //处理PS2手柄控制命令
++				
++					//CAN, Usart 1, Usart 3, Uart5 control can directly get the three axis target speed, 
++					//without additional processing
++					//CAN、串口1、串口3(ROS)、串口5控制直接得到三轴目标速度，无须额外处理
++					else                      Drive_Motor(Move_X, Move_Y, Move_Z);
+ 				
+ 				
+ 				
+ 				//If there is no abnormity in the battery voltage, and the enable switch is in the ON position,
+         //and the software failure flag is 0
+ 				//如果电池电压不存在异常，而且使能开关在ON档位，而且软件失能标志位为0
+-				if(Turn_Off(Voltage)==0) 
++					if(Turn_Off(Voltage)==0) 
+ 				 { 			
+            //Speed closed-loop control to calculate the PWM value of each motor, 
+ 					 //PWM represents the actual wheel speed					 
+@@ -261,8 +307,9 @@
+ 				 }
+ 				 //If Turn_Off(Voltage) returns to 1, the car is not allowed to move, and the PWM value is set to 0
+ 				 //如果Turn_Off(Voltage)返回值为1，不允许控制小车进行运动，PWM值设置为0
+-				 else	Set_Pwm(0,0,0,0,0); 
+-			 }
++					 else	Set_Pwm(0,0,0,0,0); 
++				}
++			 }
+ 				else							//用户自检代码
+ 			{
+ 				if(Proc_Flag==3)						//自检电机
+@@ -525,26 +572,30 @@
+ 在我们的速度控制闭环系统里面，只使用PI控制
+ pwm+=Kp[e（k）-e(k-1)]+Ki*e(k)
+ **************************************************************************/
+-int Incremental_PI_A (float Encoder,float Target)
+-{ 	
+-	 static float Bias,Pwm,Last_bias;
+-	 Bias=Target-Encoder; //Calculate the deviation //计算偏差
+-	 Pwm+=Velocity_KP*(Bias-Last_bias)+Velocity_KI*Bias; 
+-	 if(Pwm>16700)Pwm=16700;
+-	 if(Pwm<-16700)Pwm=-16700;
+-	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 
+-	 return Pwm;    
+-}
+-int Incremental_PI_B (float Encoder,float Target)
+-{  
+-	 static float Bias,Pwm,Last_bias;
+-	 Bias=Target-Encoder; //Calculate the deviation //计算偏差
+-	 Pwm+=Velocity_KP*(Bias-Last_bias)+Velocity_KI*Bias;  
+-	 if(Pwm>16700)Pwm=16700;
+-	 if(Pwm<-16700)Pwm=-16700;
+-	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 
+-	 return Pwm;
+-}
++int Incremental_PI_A (float Encoder,float Target)
++{ 	
++	 g_velocity_pi_a.bias=Target-Encoder; //Calculate the deviation //计算偏差
++	 g_velocity_pi_a.pwm_acc+=Velocity_KP*(g_velocity_pi_a.bias-g_velocity_pi_a.last_bias)+Velocity_KI*g_velocity_pi_a.bias; 
++	 if(g_velocity_pi_a.pwm_acc>16700)g_velocity_pi_a.pwm_acc=16700;
++	 if(g_velocity_pi_a.pwm_acc<-16700)g_velocity_pi_a.pwm_acc=-16700;
++	 g_velocity_pi_a.last_bias=g_velocity_pi_a.bias; //Save the last deviation //保存上一次偏差
++	 debug_pi_a_acc=g_velocity_pi_a.pwm_acc;
++	 debug_target_a=Target;
++	 debug_encoder_a=Encoder;
++	 return g_velocity_pi_a.pwm_acc;
++}
++int Incremental_PI_B (float Encoder,float Target)
++{  
++	 g_velocity_pi_b.bias=Target-Encoder; //Calculate the deviation //计算偏差
++	 g_velocity_pi_b.pwm_acc+=Velocity_KP*(g_velocity_pi_b.bias-g_velocity_pi_b.last_bias)+Velocity_KI*g_velocity_pi_b.bias;  
++	 if(g_velocity_pi_b.pwm_acc>16700)g_velocity_pi_b.pwm_acc=16700;
++	 if(g_velocity_pi_b.pwm_acc<-16700)g_velocity_pi_b.pwm_acc=-16700;
++	 g_velocity_pi_b.last_bias=g_velocity_pi_b.bias; //Save the last deviation //保存上一次偏差
++	 debug_pi_b_acc=g_velocity_pi_b.pwm_acc;
++	 debug_target_b=Target;
++	 debug_encoder_b=Encoder;
++	 return g_velocity_pi_b.pwm_acc;
++}
+ int Incremental_PI_C (float Encoder,float Target)
+ {  
+ 	 static float Bias,Pwm,Last_bias;
+--- a/BALANCE/balance.h
++++ b/BALANCE/balance.h
+@@ -14,9 +14,18 @@
+ 
+ extern short test_num;
+ extern int robot_mode_check_flag;
+-extern u8 command_lost_count;
+-extern volatile u8 Motion_Stop_Request;
+-void Balance_task(void *pvParameters);
++extern u8 command_lost_count;
++extern volatile u8 Motion_Stop_Request;
++extern volatile float debug_pi_a_acc;
++extern volatile float debug_pi_b_acc;
++extern volatile float debug_target_a;
++extern volatile float debug_target_b;
++extern volatile float debug_encoder_a;
++extern volatile float debug_encoder_b;
++extern volatile int debug_hard_stop_count;
++extern volatile int debug_pi_reset_count;
++void Reset_Velocity_PI(void);
++void Balance_task(void *pvParameters);
+ void Set_Pwm(int motor_a,int motor_b,int motor_c,int motor_d,int servo);
+ void Limit_Pwm(int amplitude);
+ float target_limit_float(float insert,float low,float high);

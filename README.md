@@ -24,6 +24,36 @@
 
 </div>
 
+## 2026-07-22 Motion-Control and Semantic Mapping Update
+
+The tracked-base firmware now clears incremental-PI state at an explicit hard
+stop while keeping the original PI formula and gains. The matching ROS serial
+driver sends security-enable frames only during startup, so command-loss
+stopping remains active without periodically clearing PI accumulation during a
+low-speed action.
+
+The new semantic mapping controller provides direct odometry targets, fresh
+odometry gates, zero-command flushing, settled-state checks, drive yaw hold,
+LiDAR emergency stopping, and `/cmd_vel_raw` publisher auditing. Routes are
+taught at runtime and replayed from exported JSONL events. No newly recorded
+competition route, event log, waypoint list, or map coordinate is included in
+this update.
+
+```bash
+bash tools/start_k1_semantic_mapping_controller.sh mapping-start
+
+# Dry-run and inspect a route captured by the controller.
+python3 tools/replay_k1_semantic_events.py route.jsonl
+
+# Execute only after restoring the robot to the taught start pose.
+python3 tools/replay_k1_semantic_events.py route.jsonl --execute
+
+bash tools/start_k1_semantic_mapping_controller.sh mapping-stop
+```
+
+The reviewed firmware patch and matching HEX are documented in
+[`firmware/README.md`](firmware/README.md).
+
 ## 项目简介
 
 本仓库为进迭时空 K1 MUSE Pi Pro 边缘 AI 应用赛道的公开源码提交版。项目面向 GPS 拒止、通信受限、云端不可依赖的巡检场景，构建一套在端侧完成建图、感知、风险定位、处置规划和报告生成的移动机器人系统。
