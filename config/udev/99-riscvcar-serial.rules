@@ -1,0 +1,7 @@
+# RISC-V car stable serial device names
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="5898000722", MODE="0666", GROUP="dialout", SYMLINK+="wheeltec_lidar"
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", ATTRS{serial}=="597B019168", MODE="0666", GROUP="dialout", SYMLINK+="base_controller"
+
+# The two CH340 adapters have no serial number, but their bcdDevice revisions differ.
+SUBSYSTEM=="tty", KERNEL=="ttyUSB*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ATTRS{bcdDevice}=="0264", MODE="0660", GROUP="dialout", SYMLINK+="arm_bus"
+SUBSYSTEM=="tty", KERNEL=="ttyUSB*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ATTRS{bcdDevice}=="8134", MODE="0660", GROUP="dialout", SYMLINK+="k1_syn6288"

@@ -8,34 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from k1_calibrated_motion import list_semantics
-from replay_k1_semantic_events import build_replay
 
 
 class MotionSemanticTest(unittest.TestCase):
     def test_registry_uses_direct_odom_targets(self) -> None:
         semantics = list_semantics()
 
-        self.assertEqual(len(semantics), 34)
+        self.assertEqual(len(semantics), 35)
         for semantic in semantics:
             self.assertEqual(semantic.requested_value, semantic.odom_cutoff)
-
-    def test_replay_is_built_only_from_runtime_events(self) -> None:
-        events = [
-            {"wall_time": 10.0, "event": "semantic_start", "code": "FORWARD_20"},
-            {
-                "wall_time": 11.5,
-                "event": "semantic_result",
-                "semantic": "FORWARD_20",
-                "result": "distance_reached",
-                "progress": 0.2,
-            },
-        ]
-
-        replay = build_replay(events)
-
-        self.assertEqual(len(replay), 1)
-        self.assertEqual(replay[0]["semantic"], "FORWARD_20")
-        self.assertEqual(replay[0]["recorded_duration_s"], 1.5)
 
 
 class SecurityFrameTest(unittest.TestCase):

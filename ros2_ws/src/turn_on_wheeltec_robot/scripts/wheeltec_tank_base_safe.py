@@ -172,7 +172,7 @@ class WheeltecTankBase(Node):
         self.odom_linear_scale = float(self.get_parameter("odom_linear_scale").value)
         self.odom_angular_scale = float(self.get_parameter("odom_angular_scale").value)
 
-        self.serial = serial.Serial(self.port, self.baud, timeout=0.02)
+        self.serial = serial.Serial(self.port, self.baud, timeout=0.0)
         self.serial.reset_input_buffer()
         self.serial.reset_output_buffer()
         if self.send_security_enable_on_start and self.security_ply:

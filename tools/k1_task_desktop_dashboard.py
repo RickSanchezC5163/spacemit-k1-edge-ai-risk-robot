@@ -131,7 +131,7 @@ HTML = r"""<!doctype html>
   <header>
     <div>
       <h1>K1 复杂受限空间任务控制台</h1>
-      <div class="sub">2m x 2m 复赛复刻场景 | 建图、风险识别、探图预览、处置准备</div>
+      <div class="sub">复杂受限空间 | 自主建图、风险识别、路径规划、处置准备</div>
     </div>
     <div id="clock" class="pill">--</div>
   </header>
@@ -182,7 +182,7 @@ const taskNames = [
   ["base", "底盘/雷达建图", "SLAM、/scan、/odom 与安全守护"],
   ["d435", "D435 RGB-D", "风险识别输入"],
   ["yolo", "YOLOv8n 本地推理", "SpaceMIT EP / CPU fallback"],
-  ["rrt", "RRT/Nav2 探图", "2m 场景目标预览或执行"],
+  ["rrt", "RRT/Nav2 自主探索", "未知区域目标选择与路径执行"],
   ["risk", "风险点落图", "结构化事件与地图风险点"],
   ["report", "报告/处置准备", "人工处置任务与语音播报"]
 ];

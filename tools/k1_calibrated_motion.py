@@ -67,6 +67,7 @@ def _register(items: Iterable[MotionSemantic]) -> None:
 
 _register(
     [
+        _drive("FORWARD_5", "前进 5 cm", 1, 0.05, 0.05),
         _drive("FORWARD_10", "前进 10 cm", 1, 0.10, 0.10),
         _drive("FORWARD_20", "前进 20 cm", 1, 0.20, 0.20),
         _drive("FORWARD_25", "前进 25 cm", 1, 0.25, 0.25),

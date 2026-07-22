@@ -53,6 +53,9 @@ COMMAND_FRAMES: Dict[str, bytes] = {
     "power_down": bytes([0xFD, 0x00, 0x02, 0x88, 0x77]),
 }
 
+STATUS_BUSY = 0x4E
+STATUS_IDLE = 0x4F
+
 
 def xor_checksum(data: Iterable[int]) -> int:
     checksum = 0
@@ -152,6 +155,29 @@ class Syn6288Client:
         self._serial.write(frame)
         self._serial.flush()
 
+    def reset_input(self) -> None:
+        if self._serial is not None:
+            self._serial.reset_input_buffer()
+
+    def wait_until_idle(self, timeout_s: float = 15.0, poll_s: float = 0.1) -> None:
+        """Wait for the module's 0x4F playback-complete response."""
+        if self.dry_run:
+            return
+        assert self._serial is not None
+        deadline = time.monotonic() + max(0.1, timeout_s)
+        while time.monotonic() < deadline:
+            self.write_frame(COMMAND_FRAMES["status"])
+            query_deadline = min(deadline, time.monotonic() + max(0.05, poll_s))
+            while time.monotonic() < query_deadline:
+                waiting = self._serial.in_waiting
+                response = self._serial.read(waiting or 1)
+                if STATUS_IDLE in response:
+                    return
+                if STATUS_BUSY in response:
+                    break
+            time.sleep(max(0.01, poll_s))
+        raise TimeoutError(f"SYN6288 did not become idle within {timeout_s:.1f}s")
+
     def command(self, name: str) -> None:
         frame = COMMAND_FRAMES.get(name)
         if frame is None:
@@ -172,6 +198,7 @@ class Syn6288Client:
         prefix = f"[d][V{volume}][m{background_volume}][t{speed}]"
         chunks = chunk_text_for_gbk(text, prefix=prefix)
         for idx, chunk in enumerate(chunks):
+            self.reset_input()
             frame = build_speak_frame(
                 chunk,
                 music=music,
@@ -228,6 +255,8 @@ def main() -> int:
     parser.add_argument("--speed", type=int, default=5)
     parser.add_argument("--music", type=int, default=0)
     parser.add_argument("--delay-s", type=float, default=0.8, help="delay between multiple texts")
+    parser.add_argument("--wait", action="store_true", help="wait for the module's playback-complete response")
+    parser.add_argument("--wait-timeout-s", type=float, default=15.0)
     parser.add_argument("--encoding", default="gbk", help="text encoding used inside SYN6288 frame")
     parser.add_argument("--dry-run", action="store_true", help="print frame hex instead of opening serial")
     parser.add_argument("--list-ports", action="store_true")
@@ -257,6 +286,8 @@ def main() -> int:
                 speed=args.speed,
                 encoding=args.encoding,
             )
+            if args.wait:
+                client.wait_until_idle(timeout_s=args.wait_timeout_s)
             if idx != len(texts) - 1:
                 time.sleep(max(0.0, args.delay_s))
     finally:

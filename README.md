@@ -30,7 +30,7 @@
 
 当前系统已经集成：
 
-- 基于 ROS2、雷达、里程计和安全守护的遥控二维建图。
+- 基于 ROS2、雷达、里程计、SLAM-Frontier/RRT/Nav2 和安全守护的实机自主二维建图。
 - Ubuntu ROS2 Humble + Gazebo + RViz 下的 SLAM-Frontier/RRT/Nav2 自主建图仿真。
 - SolidWorks/SW2URDF 机械臂导入包，作为后续 MoveIt 与 leakage 处置仿真的独立模型。
 - Intel RealSense D435 RGB-D 输入和 K1 本地 YOLOv8n ONNX 推理。
@@ -57,19 +57,19 @@ D435 RGB-D -> YOLOv8n 本地推理 -> 风险事件
 RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地 LLM 风险报告
 ```
 
-## 2026-07-22 实机完整链路基线
+## 2026-07-22 实机自主建图完整链路基线
 
-在 7 月 20 日完整链路的基础上，本次更新完成了履带底盘动作边界和语义建图控制优化：
+在 7 月 20 日完整链路的基础上，本次更新完成了履带底盘动作边界、自主建图稳定性和端侧风险闭环优化：
 
 - STM32 固件将 A/B 两路增量 PI 状态显式化，并在 hard stop 时清空误差历史和 PWM 累加量；PI 公式、增益、方向和限幅保持不变，Keil 全量重建结果为 0 错误、0 警告。
 - ROS 串口驱动的安全使能帧改为仅在启动时发送，避免运行期间周期性零速帧反复触发 hard stop 和 PI 清零；命令超时停车保护继续保留。
-- 新增 34 个直接使用 odom 目标值的前进、后退和转向语义，不再使用距离或角度补偿倍数。
-- 语义建图控制器加入 odom 新鲜度检查、零速刷新、停稳判定、直行航向保持、LiDAR 急停和 `/cmd_vel_raw` 发布者唯一性检查。
-- 路线由运行时语义操作采集并导出为 JSONL，再由复刻工具读取执行。此次开源更新不包含新采集的复赛路线、事件日志、固定点位或地图坐标。
+- 底盘动作原语直接使用 odom 目标值，不使用距离或角度补偿倍数，并加入 odom 新鲜度检查、零速刷新、停稳判定和直行航向保持。
+- 自主建图链路保留 LiDAR 急停、命令超时停车和 `/cmd_vel_raw` 发布者唯一性检查，避免高负载或进程残留影响运动连续性。
+- 机器人由 SLAM 持续更新占据栅格，Frontier/RRT 自主选择未知区域目标，Nav2 规划并执行路径；任务开始后无需人工遥控底盘。
 
-固件补丁、已验证 HEX 和校验值见 [`firmware/README.md`](firmware/README.md)；通用控制入口为 `tools/start_k1_semantic_mapping_controller.sh`，复刻入口为 `tools/replay_k1_semantic_events.py`。
+固件补丁、已验证 HEX 和校验值见 [`firmware/README.md`](firmware/README.md)；实机自主建图入口为 `tools/start_real_k1_rrt_nav2_mapping.sh`。
 
-当前 K1 实机基线是在约 `2m x 2m` 复赛复刻场地中，同时运行自由探图、风险识别、blockage 接近、USB 近距离确认和机械臂语义切换。主 D435 YOLO 使用 SpaceMIT Execution Provider，默认 `1s/frame`，不开视频流；原始 RGB-D 不经过 ROS2 DDS 广播。
+当前 K1 实机基线在复杂受限空间测试场地中，自主完成环境探索、二维建图、风险识别、blockage 接近、USB 近距离确认和机械臂处置状态切换。主 D435 YOLO 使用 SpaceMIT Execution Provider；原始 RGB-D 可由本地直采链路处理，不依赖云端服务。
 
 完整链路：
 
@@ -201,7 +201,7 @@ python3 tools/visualize_k1_map_rrt_risk_overlay.py \
 
 ## 更新记录
 
-- **2026-07-22**：完成履带底盘跨动作 PI 残留修复和安全使能帧启动期单次发送；发布 34 个直接 odom 语义及运行时采集、建图、停稳检查和 JSONL 复刻工具。实机完成 57 个语义动作的采集与复刻，动作全部结束且未触发超时、取消或 LiDAR 急停；开源仓库不包含该路线的固定点位和地图坐标。
+- **2026-07-22**：完成履带底盘跨动作 PI 状态清理、安全使能帧启动期单次发送、实机自主建图稳定性优化，以及 D435 + YOLO 风险识别、深度落图和本地 LLM 报告链路联调。
 - **2026-07-20**：完成 K1 实机 `SLAM + Nav2 + RRT + SpaceMIT EP YOLO + blockage approach + USB close confirm` 完整链验证；加入拍摄时刻风险投影、多帧空间融合、有界候选内存、RRT 事件驱动重算和完整资源统计，并保存最终地图及风险可视化结果。
 - **2026-07-19**：打通 K1 实机自由探图、SpaceMIT EP YOLO 风险候选记录、blockage 靠近和近距离确认预留；修正风险点坐标系，区分 `map_point_xy_m` 与 `odom≈` 候选；新增自适应横平竖直地图 + RRT + 风险点可视化工具。
 - **2026-07-18**：完成 K1 实机约 2.5m 场地纯 RRT/Nav2/SLAM 建图验证；加入 45 度侧向微调、贴边短后退和更稳的薄壁角落处理，保存最终地图 `map_after_rrt_free_roam_stop_20260718_030446.yaml`。
@@ -312,7 +312,7 @@ flowchart LR
 ## 仓库特性
 
 - **ROS2 建图与启动**：履带底盘、雷达、里程计、SLAM 和地图保存。
-- **安全守护控制**：基于前向距离的遥控速度过滤与急停/慢速/放行逻辑。
+- **安全守护控制**：基于前向距离的底盘速度过滤与急停/慢速/放行逻辑。
 - **D435 本地感知**：RGB-D 采集、YOLO overlay、深度门限和风险事件保存。
 - **风险事件归档**：保存 overlay 帧、原始 RGB 帧、检测 JSON 和运行指标。
 - **风险地图渲染**：风险点投影到地图坐标，并支持同类近邻合并。
@@ -418,7 +418,7 @@ models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 ├── schemas/                  # 风险点、检测结果、动作候选、报告 JSON schema
 ├── rl/                       # 语义动作空间与仿真训练/评估脚本
 ├── models/risk_vision/       # 已量化 YOLOv8n ONNX 示例模型与量化报告
-├── maps/                     # 遥控建图与风险地图样例
+├── maps/                     # 自主建图与风险地图样例
 ├── evidence/                 # 端到端验证记录样例
 ├── docs/                     # 设计文档、项目报告、硬件图片、部署记录
 └── demo/                     # 演示视频样例或最终视频链接说明
@@ -431,7 +431,7 @@ models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 - [最终项目报告 PDF](docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf)
 - [最终项目报告 DOCX](docs/report/spacemit_k1_edge_ai_robot_report.docx)
 - [最终演示视频](demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4)
-- [遥控建图 + YOLO + 机械臂演示设计](docs/prelim_remote_mapping_yolo_arm_demo_20260703.md)
+- [YOLO + 机械臂风险闭环演示设计](docs/prelim_remote_mapping_yolo_arm_demo_20260703.md)
 - [系统协议与整体逻辑](docs/k1_full_system_protocol_and_logic_20260630.md)
 - [本地 LLM 报告接口](docs/local_llm_report_interface_20260701.md)
 - [风险地图总结接口](docs/risk_map_summary_interface_20260702.md)
