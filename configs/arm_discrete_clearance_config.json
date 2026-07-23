@@ -1,0 +1,93 @@
+{
+  "schema_version": "arm_discrete_clearance_v1",
+  "description": "Arm-tip near-camera, repeatable-observation LEFT/CENTER/RIGHT arm clearance. All perception and hardware fields are fail-closed until calibrated.",
+  "camera_mount_mode": "ARM_MOVING_FIXED_OBSERVATION",
+  "near_camera": {
+    "device": "/dev/RgbCam",
+    "mount_location": "ARM_TIP",
+    "localization_valid_only_at_observation_pose": true,
+    "width": 640,
+    "height": 480,
+    "stabilize_frames": 10,
+    "capture_frames": 15,
+    "frame_timeout_s": 10.0
+  },
+  "object_verification": {
+    "yolo_class": "blockage",
+    "confidence_min": 0.6,
+    "require_single_detection": true,
+    "evidence_max_age_s": 60.0,
+    "model": "models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx",
+    "providers": "SpaceMITExecutionProvider,CPUExecutionProvider",
+    "imgsz": 640,
+    "inference_confidence_floor": 0.15,
+    "iou": 0.45,
+    "max_det": 10,
+    "timeout_s": 60.0
+  },
+  "marker_detection": {
+    "method": "HSV_CONTOUR",
+    "calibrated": false,
+    "hsv_lower": [0, 0, 0],
+    "hsv_upper": [179, 255, 255],
+    "min_area_px": 100,
+    "max_area_px": 100000,
+    "morphology_kernel_px": 3,
+    "stable_frames_required": 7,
+    "max_center_jitter_px": 8.0
+  },
+  "grid_regions": {
+    "LEFT": {
+      "xyxy_px": [],
+      "calibration_required": true
+    },
+    "CENTER": {
+      "xyxy_px": [],
+      "calibration_required": true
+    },
+    "RIGHT": {
+      "xyxy_px": [],
+      "calibration_required": true
+    }
+  },
+  "reject_regions": [
+    {
+      "name": "left_center_boundary",
+      "xyxy_px": [],
+      "calibration_required": true
+    },
+    {
+      "name": "center_right_boundary",
+      "xyxy_px": [],
+      "calibration_required": true
+    }
+  ],
+  "sequence_paths": {
+    "LEFT": "configs/arm_discrete_sequences/left.json",
+    "CENTER": "configs/arm_discrete_sequences/center.json",
+    "RIGHT": "configs/arm_discrete_sequences/right.json"
+  },
+  "base_zero": {
+    "required": true,
+    "stable_duration_s": 1.0,
+    "hardware_evidence_max_age_s": 10.0
+  },
+  "workspace": {
+    "hardware_policy": "REQUIRE_ESTIMATE_PASS",
+    "allow_preverified_override": false
+  },
+  "hardware": {
+    "enabled": false,
+    "one_shot_confirmation_required": true,
+    "operator_supervision_required": true,
+    "automatic_retry": false,
+    "automatic_home_on_fault": false,
+    "validated_stop_interface_required": true,
+    "validated_stop_interface": false,
+    "validated_stop_interface_evidence": null,
+    "live_base_monitor_verified": false,
+    "live_base_monitor_evidence": null,
+    "foam_contact_enabled": false,
+    "obstacle_removal_allowed": false
+  }
+}

@@ -66,6 +66,7 @@ RRT/A*/Nav2 路径结果 + MoveIt+RL 规划结果 + 结构化风险点 -> 本地
 - 底盘动作原语直接使用 odom 目标值，不使用距离或角度补偿倍数，并加入 odom 新鲜度检查、零速刷新、停稳判定和直行航向保持。
 - 自主建图链路保留 LiDAR 急停、命令超时停车和 `/cmd_vel_raw` 发布者唯一性检查，避免高负载或进程残留影响运动连续性。
 - 机器人由 SLAM 持续更新占据栅格，Frontier/RRT 自主选择未知区域目标，Nav2 规划并执行路径；任务开始后无需人工遥控底盘。
+- 自主探索产生障碍处置事件后，Nav2 取消当前目标并锁定底盘；机械臂端尖近场相机在可重复观察姿态完成目标复核和 LEFT/CENTER/RIGHT 离散区域选择，未标定动作默认禁止实机执行。
 
 固件补丁、已验证 HEX 和校验值见 [`firmware/README.md`](firmware/README.md)；实机自主建图入口为 `tools/start_real_k1_rrt_nav2_mapping.sh`。
 

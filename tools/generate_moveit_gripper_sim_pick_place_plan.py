@@ -11,6 +11,7 @@ rehearse pick-place behavior before the real gripper model is available.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -141,6 +142,17 @@ def default_waypoints() -> list[Waypoint]:
     ]
 
 
+def arm_targets_to_joint_radians(arm_targets: dict[int, int], safety: ArmSafety) -> dict[str, float]:
+    """Convert pulse placeholders to explicit radian targets for MoveIt consumers."""
+    result: dict[str, float] = {}
+    for joint_id, pulse in arm_targets.items():
+        joint = safety.config["joints"][str(joint_id)]
+        lo_deg, hi_deg = joint["angle_range_deg"]
+        angle_deg = float(lo_deg) + (float(pulse) / 1000.0) * (float(hi_deg) - float(lo_deg))
+        result[f"j{joint_id}"] = math.radians(angle_deg)
+    return result
+
+
 def validate_waypoints(waypoints: list[Waypoint], safety: ArmSafety) -> list[dict]:
     safety.set_phase("arm_b3_full_no_load_sequence")
     records = []
@@ -161,9 +173,16 @@ def validate_waypoints(waypoints: list[Waypoint], safety: ArmSafety) -> list[dic
                 "task_phase": waypoint.task_phase,
                 "duration_ms": waypoint.duration_ms,
                 "moveit_arm_group": "arm",
+                "moveit_joint_targets_rad": arm_targets_to_joint_radians(waypoint.arm_targets, safety),
+                "moveit_joint_targets_rad_calibration": "estimated_from_arm_safety_config_not_hardware_calibrated",
+                "legacy_moveit_joint_targets_pulse": {
+                    f"j{joint_id}": pulse for joint_id, pulse in waypoint.arm_targets.items()
+                },
                 "moveit_joint_targets": {
                     f"j{joint_id}": pulse for joint_id, pulse in waypoint.arm_targets.items()
                 },
+                "moveit_joint_targets_deprecated": True,
+                "moveit_joint_targets_unit": "servo_pulse_legacy_not_radians",
                 "servo_pulse_targets": {
                     str(joint_id): pulse for joint_id, pulse in waypoint.arm_targets.items()
                 },
@@ -227,7 +246,8 @@ def write_markdown(report: dict, path: Path) -> None:
             "",
             "## MoveIt Integration Notes",
             "",
-            "- Use these waypoints as joint-space targets for the `arm` planning group.",
+            "- Use `moveit_joint_targets_rad` as joint-space targets for the `arm` planning group.",
+            "- `moveit_joint_targets` is retained only as a deprecated pulse-valued compatibility field.",
             "- Attach gripper events to trajectory boundaries in the executor.",
             "- Do not add a fake gripper collision body to MoveIt until a mechanical gripper export exists.",
             "- Before real execution, replace pulse placeholders with calibrated joint angles and rerun collision checks.",

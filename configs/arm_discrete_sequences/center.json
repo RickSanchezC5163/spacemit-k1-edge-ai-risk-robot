@@ -1,0 +1,14 @@
+{
+  "schema_version": "arm_discrete_sequence_v1",
+  "grid_id": "CENTER",
+  "description": "Calibration placeholder. Do not enable or execute.",
+  "verified": false,
+  "calibration_required": true,
+  "calibration_id": null,
+  "verified_by": null,
+  "verified_at": null,
+  "interpolation_allowed": false,
+  "workspace_verified": false,
+  "workspace_evidence": null,
+  "sequence": []
+}
