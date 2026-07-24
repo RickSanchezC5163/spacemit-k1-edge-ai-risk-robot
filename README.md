@@ -42,6 +42,8 @@
 - MoveIt 机械臂仿真配置、`link4_tip_link` 末端 TCP 标定与地面任务到达验证。
 - MoveIt+RL 风格的机械臂处置动作候选与 no-load 安全响应。
 - 本地 LLM CLI 根据结构化风险点生成最终风险报告。
+- D435 实时亮度驱动的 GPIO37/PWM7 硬件自动补光，任务结束和系统启动均默认熄灯。
+- 基于实时 SLAM 地图的一键自主巡检编排，以及本地 Qwen、HTML、PDF 报告归档。
 
 系统闭环如下：
 
@@ -202,6 +204,7 @@ python3 tools/visualize_k1_map_rrt_risk_overlay.py \
 
 ## 更新记录
 
+- **2026-07-25**：公开实时地图驱动的一键自主巡检入口；加入 GPIO37/PWM7 50 Hz 硬件补光、D435 实时亮度控制、启动/收尾强制熄灯，以及 K1 本地 Qwen、HTML、PDF 报告归档。
 - **2026-07-22**：完成履带底盘跨动作 PI 状态清理、安全使能帧启动期单次发送、实机自主建图稳定性优化，以及 D435 + YOLO 风险识别、深度落图和本地 LLM 报告链路联调。
 - **2026-07-20**：完成 K1 实机 `SLAM + Nav2 + RRT + SpaceMIT EP YOLO + blockage approach + USB close confirm` 完整链验证；加入拍摄时刻风险投影、多帧空间融合、有界候选内存、RRT 事件驱动重算和完整资源统计，并保存最终地图及风险可视化结果。
 - **2026-07-19**：打通 K1 实机自由探图、SpaceMIT EP YOLO 风险候选记录、blockage 靠近和近距离确认预留；修正风险点坐标系，区分 `map_point_xy_m` 与 `odom≈` 候选；新增自适应横平竖直地图 + RRT + 风险点可视化工具。
@@ -308,6 +311,9 @@ flowchart LR
     M -- "结构化风险点" --> P
     K --> Q["Dashboard / 报警"]
     M --> Q
+    I --> R["实时亮度评估"]
+    R --> S["GPIO37 / PWM7 自动补光"]
+    S --> I
 ```
 
 ## 仓库特性
@@ -320,9 +326,21 @@ flowchart LR
 - **Dashboard UI**：通过 K1 本地 HTTP 服务在 K1 屏幕或 Windows 浏览器查看。
 - **机械臂响应接口**：no-load 安全验证、动作空间映射和处置候选。
 - **本地报告生成**：CLI 形式展示 LLM token 流式输出和最终处置清单。
+- **硬件自动补光**：D435 实时亮度触发 PWM7/GPIO37，启动和收尾均强制回到低电平。
+- **一键自主巡检**：统一编排 SLAM、Frontier/RRT、Nav2、YOLO、自动补光、地图保存和报告生成。
 - **SLAM-Frontier/RRT/A*/Nav2 与 RL 扩展接口**：保留探索目标、路径生成、语义动作空间、primitive registry、训练和评估脚本。
 
 ## 快速开始
+
+### 一键启动完整自主巡检
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+K1_AUTONOMOUS_RUNTIME_S=240 \
+  bash tools/run_k1_autonomous_inspection.sh run
+```
+
+该入口从实时 `/map` 提取 Frontier，使用 RRT/Nav2 自主生成和执行探索目标；任务结束后保存地图，关闭补光与传感器进程，并在 K1 本地生成 JSON、HTML 和 PDF 报告。完整部署和证据口径见 [`docs/autonomous_inspection_full_flow_20260725.md`](docs/autonomous_inspection_full_flow_20260725.md)。
 
 ### 1. 准备 K1 环境
 
@@ -387,6 +405,9 @@ bash tools/finalize_prelim_demo_k1.sh <run_dir>
 | D435 YOLO + 风险地图集成演示 | `tools/run_prelim_remote_mapping_yolo_arm_demo.py` |
 | K1 SpaceMIT EP 启动脚本 | `tools/start_prelim_noarm_ep_k1.sh` |
 | 演示收尾脚本 | `tools/finalize_prelim_demo_k1.sh` |
+| 一键自主巡检编排 | `tools/run_k1_autonomous_inspection.sh` |
+| 自主巡检报告打包 | `tools/generate_k1_autonomous_report_bundle.py` |
+| PWM7 硬件灯控 | `tools/k1_pwm7_light.py`、`ros2_ws/src/k1_light_control/k1_light_control/pwm7_light_node.py` |
 | 底盘安全守护 | `ros2_ws/src/k1_sensor_event_adapter/k1_sensor_event_adapter/scan_safety_guard_node.py` |
 | 本地 LLM 报告 | `tools/run_local_llm_summary.py` |
 | 风险地图总结 | `tools/run_risk_map_summary.py` |
@@ -436,6 +457,7 @@ models/risk_vision/yolov8n_480x640_q_truncated6_balanced_blockage03.onnx
 - [系统协议与整体逻辑](docs/k1_full_system_protocol_and_logic_20260630.md)
 - [本地 LLM 报告接口](docs/local_llm_report_interface_20260701.md)
 - [风险地图总结接口](docs/risk_map_summary_interface_20260702.md)
+- [自主巡检、自动补光与本地报告完整流程](docs/autonomous_inspection_full_flow_20260725.md)
 - [机械臂 SW2URDF 导入审计](docs/mechanical_arm_1_import_audit_20260711.md)
 
 ## 写在最后

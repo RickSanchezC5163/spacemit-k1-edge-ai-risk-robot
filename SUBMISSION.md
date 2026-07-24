@@ -2,10 +2,8 @@
 
 ## 仓库链接
 
-待上传 GitHub 后填写：
-
 ```text
-https://github.com/<your-account>/spacemit-k1-edge-ai-risk-robot
+https://github.com/RickSanchezC5163/spacemit-k1-edge-ai-risk-robot
 ```
 
 ## 许可说明
@@ -21,9 +19,10 @@ https://github.com/<your-account>/spacemit-k1-edge-ai-risk-robot
 | 主体任务代码开源 | `ros2_ws/src/`、`tools/`、`src/` |
 | K1 本地 AI 推理 | `tools/run_prelim_remote_mapping_yolo_arm_demo.py`、`models/risk_vision/` |
 | 端侧模型部署 | `models/risk_vision/*.onnx`、`docs/k1_yolov8n_onnx_deployment_20260702.md` |
-| 感知输入到执行输出完整链路 | `README.md`、`docs/prelim_remote_mapping_yolo_arm_demo_20260703.md` |
+| 感知输入到执行输出完整链路 | `tools/run_k1_autonomous_inspection.sh`、`docs/autonomous_inspection_full_flow_20260725.md` |
 | 风险点地图化 | `tools/project_risk_point_to_map.py`、`tools/run_risk_map_summary.py` |
-| 本地 LLM 报告 | `tools/run_local_llm_summary.py`、`configs/local_llm_config.yaml` |
+| 本地 LLM 报告 | `tools/generate_k1_autonomous_report_bundle.py`、`tools/run_local_llm_summary.py`、`configs/local_llm_config.yaml` |
+| 自适应硬件补光 | `tools/k1_pwm7_light.py`、`ros2_ws/src/k1_light_control/`、`configs/k1_pwm7_50hz_overlay.dts` |
 | 机械臂安全响应 | `src/arm_safety.py`、`configs/arm_safety_config.json` |
 | RRT/MoveIt/RL 验证接口 | `sim/tracked_robot_description/`、`tools/gz_sync_model_pose_from_odom.py`、`tools/ros2_twist_relay.py`、`rl/`、`configs/rl_action_space.yaml`、`configs/primitive_registry.yaml` |
 | 项目报告 | `docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf`、`docs/report/spacemit_k1_edge_ai_robot_report.docx` |
@@ -57,10 +56,10 @@ Gazebo 履带底盘 + N10P 雷达 + D435
 ```text
 作品名称：K1 边缘 AI 风险探测机器人
 赛道：题二：边缘 AI 应用
-代码仓库：https://github.com/<your-account>/spacemit-k1-edge-ai-risk-robot
+代码仓库：https://github.com/RickSanchezC5163/spacemit-k1-edge-ai-risk-robot
 演示视频：仓库 demo/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.mp4
 项目报告：仓库 docs/report/基于K1MusePiPro的复杂受限空间离线认知边缘智能终端.pdf
-主要说明：项目在 K1 MUSE Pi Pro 本地完成 D435 视觉输入、YOLOv8n 量化模型推理、风险点地图化、本地 LLM 报告生成和机械臂安全响应链路。
+主要说明：项目在 K1 MUSE Pi Pro 本地完成 SLAM-Frontier/RRT/Nav2 自主建图、D435 视觉输入、YOLOv8n 量化模型推理、PWM7 自适应补光、风险点地图化、本地 Qwen/HTML/PDF 报告生成和机械臂安全响应链路。
 ```
 
 ## 上传前检查

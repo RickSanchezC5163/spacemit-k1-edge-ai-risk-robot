@@ -20,6 +20,7 @@ setup(
         "console_scripts": [
             "adaptive_light_controller_node = k1_light_control.adaptive_light_controller_node:main",
             "gpio37_light_node = k1_light_control.gpio37_light_node:main",
+            "pwm7_light_node = k1_light_control.pwm7_light_node:main",
             "risk_light_bridge_node = k1_light_control.risk_light_bridge_node:main",
         ],
     },

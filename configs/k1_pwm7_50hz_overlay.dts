@@ -1,0 +1,26 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "spacemit,k1-x";
+
+	fragment@0 {
+		target-path = "/soc/pinctrl@d401e000/pwm7_1_grp";
+
+		pwm7_gpio37_pins: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/pwm@d401bc00";
+
+		__overlay__ {
+			/* CLK_PWM7 (75) selects its 32 kHz parent for a 20 ms period. */
+			assigned-clocks = <0x03 0x4b>;
+			assigned-clock-rates = <32768>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pwm7_gpio37_pins>;
+			status = "okay";
+		};
+	};
+};

@@ -47,6 +47,8 @@ The current system includes:
 - SLAM-Frontier exploration and RRT/A*/Nav2 path-generation interfaces.
 - MoveIt/RL-style arm response candidates and no-load safety responses.
 - Local LLM CLI reports generated from structured risk points.
+- D435-luminance-driven GPIO37/PWM7 hardware fill light with fail-off startup and shutdown behavior.
+- A live-map-driven autonomous inspection orchestrator that archives local Qwen, HTML, and PDF reports.
 
 System loop:
 
@@ -64,6 +66,7 @@ RRT/A*/Nav2 path + MoveIt/RL result + structured risk points -> local LLM report
 
 ## Recent Progress
 
+- **2026-07-25**: Added a live-map-driven one-click autonomous inspection entrypoint, verified GPIO37/PWM7 50 Hz hardware lighting, D435-driven automatic illumination, fail-off startup/shutdown behavior, and local Qwen/HTML/PDF report archiving.
 - **2026-07-11**: Completed the Ubuntu Humble autonomous mapping recording
   baseline with Gazebo tracked base, N10P-style lidar, D435-style camera,
   `slam_toolbox`, RRT frontier selection, Nav2, scan safety guard, and RViz
@@ -175,9 +178,22 @@ flowchart LR
     M -- "Structured risk points" --> P
     K --> Q["Dashboard / alarm"]
     M --> Q
+    I --> R["Live luminance evaluation"]
+    R --> S["GPIO37 / PWM7 automatic light"]
+    S --> I
 ```
 
 ## Quick Start
+
+### Run the complete autonomous inspection
+
+```bash
+cd /home/soc/edge-ai-robot-k1
+K1_AUTONOMOUS_RUNTIME_S=240 \
+  bash tools/run_k1_autonomous_inspection.sh run
+```
+
+This entrypoint extracts frontiers from the live `/map`, lets RRT/Nav2 generate and execute exploration goals, saves the SLAM map, turns off the light and sensor processes, and generates JSON, HTML, and PDF reports locally on K1. See [`docs/autonomous_inspection_full_flow_20260725.md`](docs/autonomous_inspection_full_flow_20260725.md).
 
 ### 1. Prepare the K1 environment
 
@@ -243,6 +259,9 @@ location figures, and the final LLM report.
 | D435 YOLO + risk mapping demo | `tools/run_prelim_remote_mapping_yolo_arm_demo.py` |
 | K1 SpaceMIT EP startup script | `tools/start_prelim_noarm_ep_k1.sh` |
 | Demo finalization script | `tools/finalize_prelim_demo_k1.sh` |
+| One-click autonomous inspection | `tools/run_k1_autonomous_inspection.sh` |
+| Autonomous report bundle | `tools/generate_k1_autonomous_report_bundle.py` |
+| PWM7 hardware light | `tools/k1_pwm7_light.py`, `ros2_ws/src/k1_light_control/k1_light_control/pwm7_light_node.py` |
 | Chassis safety guard | `ros2_ws/src/k1_sensor_event_adapter/k1_sensor_event_adapter/scan_safety_guard_node.py` |
 | Local LLM report | `tools/run_local_llm_summary.py` |
 | Risk map summary | `tools/run_risk_map_summary.py` |
@@ -276,6 +295,7 @@ location figures, and the final LLM report.
 - [System Protocol and Logic](docs/k1_full_system_protocol_and_logic_20260630.md)
 - [Local LLM Report Interface](docs/local_llm_report_interface_20260701.md)
 - [Risk Map Summary Interface](docs/risk_map_summary_interface_20260702.md)
+- [Autonomous inspection, automatic lighting, and local reporting](docs/autonomous_inspection_full_flow_20260725.md)
 - [Mechanical Arm SW2URDF Import Audit](docs/mechanical_arm_1_import_audit_20260711.md)
 
 ## License
